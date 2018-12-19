@@ -439,23 +439,6 @@ Grouping is implict by any non-aggregate fields
 RETURN p.name, count(*) as movie_count
 ```
 
-# Ingestion
-
-## General perf tuning
-
-* Turn indexing off for 3x perf gain
-* Creates are faster than MERGE because there is no lookup
-* Memory tuning
-
-conf/neo4j.conf
-
-* dbms.threads.worker_count
-* memory
-
-## CSV
-
-* If we mount the imports directory, we can simply put the CSV in it. `dbms.directories.import=import`
-
 
 
 # TODO

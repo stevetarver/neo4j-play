@@ -3,79 +3,82 @@
 I create datasets of TreeNode hierarchies and pickle them for later use
 
 """
+import argparse
 import pickle
 from pathlib import Path
 
-from node import Node, TreeNode, new_node
+from node import TreeNode, new_node
 
 # The directory I scan. It has many things pruned for this purpose - hence the pickles, so data is reproducible
-ROOT = "/Users/starver/code/appomni/appomni"
+ROOT = "/Users/starver/code/public/cpython"
+EXCLUDED_DIRS = {}
 
 CASE_STATS = {
-    'case_1': {'nodes': 90, 'dirs': 24, 'files': 66},
-    'case_2': {'nodes': 136, 'dirs': 27, 'files': 109},
-    'case_3': {'nodes': 507, 'dirs': 182, 'files': 325},
-    'case_4': {'nodes': 530, 'dirs': 204, 'files': 326},
-    'case_5': {'nodes': 697, 'dirs': 256, 'files': 441},
-    'case_6': {'nodes': 1232, 'dirs': 256, 'files': 976},
-    'case_7': {'nodes': 1604, 'dirs': 286, 'files': 1318},
-    'case_8': {'nodes': 2081, 'dirs': 311, 'files': 1770},
-    'case_9': {'nodes': 2619, 'dirs': 525, 'files': 2094},
-    'case_10': {'nodes': 3067, 'dirs': 529, 'files': 2538},
-    'case_11': {'nodes': 3687, 'dirs': 529, 'files': 3158},
-    'case_12': {'nodes': 4090, 'dirs': 529, 'files': 3561},
-    'case_13': {'nodes': 4508, 'dirs': 529, 'files': 3979},
-    'case_14': {'nodes': 5008, 'dirs': 529, 'files': 4479},
+    'case_100': {'nodes': 97, 'dirs': 35, 'files': 62},
+    'case_200': {'nodes': 205, 'dirs': 35, 'files': 170},
+    'case_300': {'nodes': 313, 'dirs': 56, 'files': 257},
+    'case_400': {'nodes': 411, 'dirs': 61, 'files': 350},
+    'case_500': {'nodes': 512, 'dirs': 45, 'files': 467},
+    'case_750': {'nodes': 827, 'dirs': 87, 'files': 740},
+    'case_1000': {'nodes': 976, 'dirs': 103, 'files': 873},
+    'case_1250': {'nodes': 1274, 'dirs': 83, 'files': 1191},
+    'case_1500': {'nodes': 1534, 'dirs': 122, 'files': 1412},
+    'case_1750': {'nodes': 1767, 'dirs': 141, 'files': 1626},
+    'case_2000': {'nodes': 1973, 'dirs': 149, 'files': 1824},
+    'case_2500': {'nodes': 2514, 'dirs': 140, 'files': 2374},
+    'case_3000': {'nodes': 2931, 'dirs': 166, 'files': 2765},
+    'case_4000': {'nodes': 3957, 'dirs': 216, 'files': 3741},
+    'case_5000': {'nodes': 5015, 'dirs': 289, 'files': 4726},
 }
 
+# Conditionally exclude directories from target to hit goal node counts
 CASE_DIR_EXCLUSIONS = dict(
-    case_1={'.git', 'web', 'scripts'},
-    case_2={'.git', 'web', 'by_ip'},
-    case_3={'.git', 'core', 'by_ip'},
-    case_4={'.git', 'sfdc', 'by_ip'},
-    case_5={'.git', 'by_ip'},
-    case_6={'.git'},
-    case_7={'objects'},  # .git/objects
-    case_8={'web', 'logs', 'by_ip'} | {f"{hex(x)}"[2:] for x in range(200)},  # .git/objects/**
-    case_9={'logs', 'by_ip'} | {f"{hex(x)}"[2:] for x in range(200)},
-    case_10={'by_ip'} | {f"{hex(x)}"[2:] for x in range(185)},
-    case_11={'by_ip'} | {f"{hex(x)}"[2:] for x in range(155)},
-    case_12={'by_ip'} | {f"{hex(x)}"[2:] for x in range(135)},
-    case_13={'by_ip'} | {f"{hex(x)}"[2:] for x in range(115)},
-    case_14={'by_ip'} | {f"{hex(x)}"[2:] for x in range(90)},
+    case_100={'Doc', 'Include', 'Lib', 'Mac', 'Misc', 'Modules', 'Objects', 'PC', 'PCbuild', 'Parser', 'Python', 'Tools'},
+    case_200={'Doc', 'Include', 'Lib', 'Mac', 'Misc', 'Modules', 'Objects', 'PC', 'Parser', 'Python', 'Tools'},
+    case_300={'Doc', 'Include', 'Lib', 'Modules', 'NEWS.d', 'Objects', 'PC', 'Parser', 'Python', 'Tools'},
+    case_400={'Doc', 'Include', 'Lib', 'Modules', 'NEWS.d', 'Objects', 'Parser', 'Python', 'Tools'},
+    case_500={'.git', 'Doc', 'Lib', 'Modules', 'NEWS.d', 'PC', 'PCBuild', 'Python', 'Tools'},
+    case_750={'.git', 'Doc', 'Lib', 'Modules', 'NEWS.d', 'PC', 'PCbuild'},
+    case_1000={'Doc', 'Lib', 'Modules', 'NEWS.d', 'PC'},
+    case_1250={'Lib', 'Modules', 'PC', 'Tools', 'next'},
+    case_1500={'Lib', 'Misc', 'Modules', 'PC'},
+    case_1750={'Lib', 'Misc', 'PC', '_ctypes', 'clinic', 'libmpdec'},
+    case_2000={'Lib', 'NEWS.d', 'PC'},
+    case_2500={'Lib', 'Modules'},
+    case_3000={'Lib'},
+    case_4000={'Include', 'Modules', 'Objects', 'PC', 'Python', 'Tools'},
+    case_5000={'PC'},
 )
 
 
-def process_dir(p: Path, tree_node: TreeNode) -> None:
+def collect_data_recurse(p: Path, tree_node: TreeNode) -> None:
     """
-    Traverse a directory, building a TreeNode hierarchy.
-    Caller should have already set tree_node.me = p, I just process children
+    Recurse dirs starting at tree_node, collecting information
     
     :param p: Path object for this dir
     :param tree_node: where tree_node.me == p
-    :return:
     """
     for item in p.iterdir():
         child = tree_node.add(item)
         if item.is_dir() and item.name not in EXCLUDED_DIRS:
-            process_dir(item, child)
+            collect_data_recurse(item, child)
 
 
-def gen_data() -> TreeNode:
+def collect_data() -> TreeNode:
     """
     Generate hierarchical file data
     """
     root = Path(ROOT)
     result = TreeNode(me=new_node(root), files=[], dirs=[])
-    
-    process_dir(root, result)
+    collect_data_recurse(root, result)
     return result
 
 
-if __name__ == "__main__":
+def pickle_datasets() -> None:
+    global EXCLUDED_DIRS
     for case, exclusions in CASE_DIR_EXCLUSIONS.items():
         EXCLUDED_DIRS = exclusions
-        result = gen_data()
+        result = collect_data()
         
         files = 0
         dirs = 0
@@ -87,4 +90,41 @@ if __name__ == "__main__":
         print(f"'{case}': {{'nodes': {dirs + files}, 'dirs': {dirs}, 'files': {files}}},")
         
         with open(f"pickles/gd1_{case}.pickle", "wb") as f:
-            pickle.dump(gen_data(), f)
+            pickle.dump(collect_data(), f)
+
+
+def dir_counts_recurse(node: TreeNode, indent: int=0) -> None:
+    """
+    Print all directories and node counts
+    """
+    fc = len(node.files)
+    dc = len(node.dirs)
+    print(f"{dc: >4}  {fc: >4}  {fc + dc: >4}  {' ' * indent}{str(node.me.path)[len(ROOT):]}")
+    for d in node.dirs:
+        dir_counts_recurse(d, indent + 2)
+
+
+def dir_counts() -> None:
+    """
+    Print all directories and node counts
+    - create initial state for dir_counts_recurse recursion
+    
+    This aids in generating datasets with a target size
+    """
+    root = collect_data()
+    print(f"Dirs Files Total  Path")
+    dir_counts_recurse(root)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Generate Neo4j datasets")
+    parser.add_argument('-l', action='store_true', default=False, help='list node count for each dir in target dir')
+    args = parser.parse_args()
+    if args.l:
+        dir_counts()
+    else:
+        pickle_datasets()
+
+
+if __name__ == "__main__":
+    main()

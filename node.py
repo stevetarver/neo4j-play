@@ -1,25 +1,22 @@
-from datetime import datetime
-from collections import OrderedDict
 from pathlib import Path
 from typing import NamedTuple, List, Optional, Dict, Any
 import json
 
 
 class Node(NamedTuple):
-    id: int
     name: str
+    tag: str
+    id: int
+    parent_id: int
     stem: str
     extension: str
     path: str
-    parent: str
     size: int
     owner: int
     group: int
-    created: datetime
-    accessed: datetime
-    modified: datetime
-    tag: str
-    ref: str  # a unique reference used when creating cypher statements
+    created: int
+    accessed: int
+    modified: int
     
     def colon_args(self) -> str:
         """ Cypher properties with :, delimiters. As used in node prop lists """
@@ -38,24 +35,28 @@ class Node(NamedTuple):
         """ A completely specified node """
         return f"({self.ref}:{self.tag} {{{self.colon_args()}}})"
     
+    @property
+    def ref(self):
+        return f"n{self.id}"
+    
     def short_node(self) -> str:
         """ A minimally specified node. For MATCH, MERGE """
         return f"({self.ref}:{self.tag} {{id: {self.id}}})"
 
+    @property
     def var(self) -> str:
-        """ Print self's variable for node generation: (n123)"""
+        """ Print self's variable for node generation: (n123) """
         return f"({self.ref})"
 
-    def _asdict_quoted(self) -> OrderedDict:
+    def _asdict_quoted(self) -> Dict:
         """ _asdict() but strings, dates are quoted """
         # Note: this strategy destroys the OrderedDictness
-        #return {k: v if isinstance(v, int) else f"'{v}'" for k, v in self._asdict() if k != 'ref'}
-        d = self._asdict()
-        del d['ref']
-        for k, v in d.items():
-            if not isinstance(v, int):
-                d[k] = f"'{v}'"
-        return d
+        return {k: v if isinstance(v, int) else f"'{v}'" for k, v in self._asdict().items()}
+        # d = self._asdict()
+        # for k, v in d.items():
+        #     if not isinstance(v, int):
+        #         d[k] = f"'{v}'"
+        # return d
     
     def __str__(self):
         return self.node()
@@ -68,18 +69,17 @@ class Node(NamedTuple):
 def new_node(p: Path) -> Node:
     stats = p.stat()
     data = {
-        "ref": f"n{stats.st_ino}",
         "tag": "Directory" if p.is_dir() else "File",
         "id": stats.st_ino,
+        "parent_id": p.parent.stat().st_ino,
         "name": p.name,
         "stem": p.stem,
         "extension": p.suffix[1:],  # omit the leading dot
         "path": p.absolute(),
-        "parent": p.parent,
         "size": stats.st_size,
-        "created": datetime.fromtimestamp(stats.st_ctime),
-        "accessed": datetime.fromtimestamp(stats.st_atime),
-        "modified": datetime.fromtimestamp(stats.st_mtime),
+        "created": stats.st_ctime,
+        "accessed": stats.st_atime,
+        "modified": stats.st_mtime,
         "owner": stats.st_uid,
         "group": stats.st_gid,
     }
@@ -127,6 +127,15 @@ class TreeNode(NamedTuple):
         for f in self.files:
             print(f"{' ' * (indent + 2)}{f}")
 
+    # TODO: Does this functionality belong here? May have multiple strategies
+    """
+    could have a selector of CREATE, MERGE, MATCH
+    CREATE all nodes, rels
+    MERGE implies an ON CREATE SET, ON MATCH SET
+    MATCH kinda assumes all nodes created
+    
+    Now that we have a single relation and the parent id, we could just use the iterator to gen cypher
+    """
     def _cypher_recurse(self) -> None:
         """
         The protected method is the part that actually recurses
@@ -139,6 +148,7 @@ class TreeNode(NamedTuple):
         for d in self.dirs:
             d._cypher_recurse()
 
+    # TODO: Does this functionality belong here? May have multiple strategies
     def cypher(self) -> None:
         """
         Represent myself and all children as cypher nodes and relationships

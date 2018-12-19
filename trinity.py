@@ -171,15 +171,22 @@ def multiple_batches_new():
 
 
 def run_single_batch(iterations):
-    for i in range(1,8):
-        fn = f"data/gd1_case_{i}.txt"
-        duration = 0
-        for _ in range(iterations):
-            duration += single_batch(fn)
-        duration /= iterations
-        nc = CASE_STATS[f'case_{i}']['nodes']
-        nps = nc/duration
-        print(f"gd1_case_{i}\t{nc}\t{duration}\t{nps}")
+    print("Case\tNodes\tDuration\tNodes/sec")
+    for case, case_info in CASE_STATS.items():
+        # TODO: current neo4j config causes death above about this many nodes
+        if case_info['nodes'] < 1800:
+            fn = f"cypher/gd1_{case}.cypher"
+            duration = 0
+            for _ in range(iterations):
+                # d = single_batch(fn)
+                # print(d)
+                # duration += d
+                duration += single_batch(fn)
+                
+            duration /= iterations
+            nc = case_info['nodes']
+            nps = int(nc/duration)
+            print(f"gd1_{case}\t{nc}\t{duration:.4f}\t{nps}")
 
 
 if __name__ == "__main__":
