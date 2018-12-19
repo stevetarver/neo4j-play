@@ -1,241 +1,90 @@
 #!/usr/bin/env python3
 """
-Create a dataset for neo4j
+I create datasets of TreeNode hierarchies and pickle them for later use
 
-1. Setup a process that can scale to many items to test performance
-2. Establish data format - experiment with different load techniques: cypher, etl
-3. Define the data that will be collected and output format
 """
-from _datetime import datetime
-from collections import OrderedDict
+import pickle
 from pathlib import Path
-from typing import NamedTuple, Dict, Any, Union, List, Optional
-from pprint import pprint, pformat
-import json
-from random import randint
 
-# Change the printed output to include brief info for debugging dir recursion
-DEBUG_DIRS_PROCESSING = False
+from node import Node, TreeNode, new_node
 
-# ROOT = "/Users/starver/code/appomni/neo4j-play"
-ROOT = "/Users/starver/code/appomni"
+# The directory I scan. It has many things pruned for this purpose - hence the pickles, so data is reproducible
+ROOT = "/Users/starver/code/appomni/appomni"
 
+CASE_STATS = {
+    'case_1': {'nodes': 90, 'dirs': 24, 'files': 66},
+    'case_2': {'nodes': 136, 'dirs': 27, 'files': 109},
+    'case_3': {'nodes': 507, 'dirs': 182, 'files': 325},
+    'case_4': {'nodes': 530, 'dirs': 204, 'files': 326},
+    'case_5': {'nodes': 697, 'dirs': 256, 'files': 441},
+    'case_6': {'nodes': 1232, 'dirs': 256, 'files': 976},
+    'case_7': {'nodes': 1604, 'dirs': 286, 'files': 1318},
+    'case_8': {'nodes': 2081, 'dirs': 311, 'files': 1770},
+    'case_9': {'nodes': 2619, 'dirs': 525, 'files': 2094},
+    'case_10': {'nodes': 3067, 'dirs': 529, 'files': 2538},
+    'case_11': {'nodes': 3687, 'dirs': 529, 'files': 3158},
+    'case_12': {'nodes': 4090, 'dirs': 529, 'files': 3561},
+    'case_13': {'nodes': 4508, 'dirs': 529, 'files': 3979},
+    'case_14': {'nodes': 5008, 'dirs': 529, 'files': 4479},
+}
 
-class Node(NamedTuple):
-    id: int
-    name: str
-    stem: str
-    extension: str
-    path: str
-    parent: str
-    size: int
-    owner: int
-    group: int
-    created: datetime
-    accessed: datetime
-    modified: datetime
-    tag: str
-    ref: str  # a unique reference used when creating cypher statements
-
-    def args(self) -> str:
-        """ Cypher fields as used in ON CREATE """
-        args = [f"{k} = {v}" for k,v in self._quoted_as_dict().items()]
-        return ", ".join(args)
-
-    def node(self) -> str:
-        """ A cypher fully specified node """
-        args = ', '.join([f'{k}: {v}' for k,v in self._quoted_as_dict().items()])
-        return f"({self.ref}:{self.tag} {{{args}}})"
-
-    def short_node(self) -> str:
-        return f"({self.ref}:{self.tag} {{id: {self.id}}})"
-
-    def _quoted_as_dict(self) -> OrderedDict:
-        d = self._asdict()
-        del d['ref']
-        for k, v in d.items():
-            if not isinstance(v, int):
-                d[k] = f"'{v}'"
-        return d
-
-    def __str__(self):
-        if DEBUG_DIRS_PROCESSING:
-            # return f"(:{self.tag} {{path: '{self.path}'}})"
-            return f"{self.tag[:3]} {self.path}"
-        else:
-            args = []
-            for f in self._fields:
-                value = getattr(self, f)
-                if not isinstance(value, int):
-                    value = f"'{value}'"
-                args.append(f"{f}: {value}")
-            return f"({self.ref}:{self.tag} {{{', '.join(args)}}})"
-
-    def __repr__(self):
-        # Pretty cool, but Neo4j doesn't like the double quoted property names
-        return f"({self.ref}:{self.tag} {json.dumps(self._asdict(), sort_keys=True, default=str)})"
-
-
-class TreeNode(NamedTuple):
-    me: Node
-    files: List[Node]
-    dirs: List["TreeNode"]
-    
-    def add(self, p: Path) -> Optional["TreeNode"]:
-        """
-        Add an item to the proper collection in this node
-        :param p: Path object to add
-        :return: a TreeNode object if one was created (to hold a Dir Node)
-        """
-        node = Node(**get_info(p))
-        if p.is_dir():
-            self.dirs.append(TreeNode(me=node, files=[], dirs=[]))
-            return self.dirs[-1]
-        else:
-            self.files.append(node)
-
-    def iter(self):
-        """
-        A recursive generator - producing nodes (stripping out the TreeNode part)
-        Recursing a TreeNode structure can be tedious - capture that logic here
-        """
-        yield self.me
-        for d in self.dirs:
-            yield from d.iter()
-        for f in self.files:
-            yield f
-
-    def print(self, indent=0):
-        print(f"{' ' * indent}{self.me}")
-        for d in self.dirs:
-            d.print(indent+2) # recurse subtree
-        for f in self.files:
-            print(f"{' ' * (indent+2)}{f}")
-
-    def cypher(self):
-        """
-        Produce cypher create statements and relationships
-        NOTE: we use random references assuming the script will be run against
-        """
-        pass
-
-
-def ref():
-    """ Return a new, unique int for each call """
-    ref.counter += 1
-    return f"n{ref.counter}"
-
-
-# initialize the ref counter
-ref.counter = 0
-
-
-def get_info(p: Path) -> Dict[str, Any]:
-    stats = p.stat()
-    return {
-        "ref": ref(),
-        "tag": "Directory" if p.is_dir() else "File",
-        "id": stats.st_ino,
-        "name": p.name,
-        "stem": p.stem,
-        "extension": p.suffix[1:],  # omit the leading dot
-        "path": p.absolute(),
-        "parent": p.parent,
-        "size": stats.st_size,
-        "created": datetime.fromtimestamp(stats.st_ctime),
-        "accessed": datetime.fromtimestamp(stats.st_atime),
-        "modified": datetime.fromtimestamp(stats.st_mtime),
-        "owner": stats.st_uid,
-        "group": stats.st_gid,
-    }
+CASE_DIR_EXCLUSIONS = dict(
+    case_1={'.git', 'web', 'scripts'},
+    case_2={'.git', 'web', 'by_ip'},
+    case_3={'.git', 'core', 'by_ip'},
+    case_4={'.git', 'sfdc', 'by_ip'},
+    case_5={'.git', 'by_ip'},
+    case_6={'.git'},
+    case_7={'objects'},  # .git/objects
+    case_8={'web', 'logs', 'by_ip'} | {f"{hex(x)}"[2:] for x in range(200)},  # .git/objects/**
+    case_9={'logs', 'by_ip'} | {f"{hex(x)}"[2:] for x in range(200)},
+    case_10={'by_ip'} | {f"{hex(x)}"[2:] for x in range(185)},
+    case_11={'by_ip'} | {f"{hex(x)}"[2:] for x in range(155)},
+    case_12={'by_ip'} | {f"{hex(x)}"[2:] for x in range(135)},
+    case_13={'by_ip'} | {f"{hex(x)}"[2:] for x in range(115)},
+    case_14={'by_ip'} | {f"{hex(x)}"[2:] for x in range(90)},
+)
 
 
 def process_dir(p: Path, tree_node: TreeNode) -> None:
     """
     Traverse a directory, building a TreeNode hierarchy.
     Caller should have already set tree_node.me = p, I just process children
+    
     :param p: Path object for this dir
     :param tree_node: where tree_node.me == p
     :return:
     """
     for item in p.iterdir():
         child = tree_node.add(item)
-        if item.is_dir():
+        if item.is_dir() and item.name not in EXCLUDED_DIRS:
             process_dir(item, child)
 
 
-def script_header():
-    constraint = "CREATE CONSTRAINT ON ({var}:{label}) ASSERT {var}.id IS UNIQUE;"
-    data = {
-        'd': 'Directory',
-        'f': 'File',
-        'c': 'Classification'
-    }
-    return "\n".join([constraint.format(var, label) for var,label in data.items()])
-
-
-def gen_nodes(origin: TreeNode) -> None:
-    """
-    Traverse tree, only creating nodes
-    """
-    for f in origin.files:
-        print(f"CREATE {f.node()}")
-    for d in origin.dirs:
-        print(f"CREATE {d.me.node()}")
-    for d in origin.dirs:
-        gen_nodes(d)
-
-
-def gen_edges(origin: TreeNode) -> None:
-    me = origin.me
-    for i in origin.files + [x.me for x in origin.dirs]:
-        # TODO: we might be able to put both creates on a single line
-        # TODO: I think this is more efficient if creating nodes and relationships in one statement
-        # TODO: this approach still not working - look up syntax or just consolidate
-        # NOTE: Shortcut: this is intended to be run in a single script, so omit match
-        # print(f"MATCH {me.short_node()}, {i.short_node()} MERGE ({me.ref})  - [:PARENT] -> ({i.ref})")
-        # print(f"MATCH {me.short_node()}, {i.short_node()} MERGE ({me.ref}) <- [:CHILD]  -  ({i.ref})")
-        print(f"MERGE ({me.ref})  - [:PARENT] -> ({i.ref})")
-        print(f"MERGE ({me.ref}) <- [:CHILD]  -  ({i.ref})")
-    for d in origin.dirs:
-        gen_edges(d)
-
-
-def gen_cypher(origin: TreeNode):
-    print(script_header())
-    print(f"CREATE {origin.me.node()}")
-    
-    gen_nodes(origin)
-    gen_edges(origin)
-
-
-def gen_data():
+def gen_data() -> TreeNode:
     """
     Generate hierarchical file data
-    Be sure to add constraints prior to adding data
-    
-        CREATE CONSTRAINT ON (d:Directory)
-        ASSERT d.id IS UNIQUE
-        
-        CREATE CONSTRAINT ON (f:File)
-        ASSERT f.id IS UNIQUE
     """
     root = Path(ROOT)
-    result = TreeNode(me=Node(**get_info(root)), files=[], dirs=[])
-
+    result = TreeNode(me=new_node(root), files=[], dirs=[])
+    
     process_dir(root, result)
-
-    # print the raw hierarchy - might want to change str dunder for clarity
-    # result.print()
-
-    # test TreeNode.iter()
-    # for n in result.iter():
-    #     print(n.path)
-    
-    gen_cypher(result)
-    
-    # for i in result.iter():
-    #     print(i.node())
+    return result
 
 
-gen_data()
+if __name__ == "__main__":
+    for case, exclusions in CASE_DIR_EXCLUSIONS.items():
+        EXCLUDED_DIRS = exclusions
+        result = gen_data()
+        
+        files = 0
+        dirs = 0
+        for item in result.iter():
+            if "Directory" == item.tag:
+                dirs += 1
+            else:
+                files += 1
+        print(f"'{case}': {{'nodes': {dirs + files}, 'dirs': {dirs}, 'files': {files}}},")
+        
+        with open(f"pickles/gd1_{case}.pickle", "wb") as f:
+            pickle.dump(gen_data(), f)

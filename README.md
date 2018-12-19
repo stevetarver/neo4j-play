@@ -14,9 +14,12 @@ Education (links ordered as an educational journey)
 * [Neo4j high level overview](https://www.youtube.com/watch?v=pMjwgKqMzi8)
 * [Cypher overview](https://www.youtube.com/watch?v=pMjwgKqMzi8)
 * [Neo4j beginner tutorial](https://www.youtube.com/watch?v=5Tl8WcaqZoc) (6 15 min parts)
-* 
+* [Neo4j worst practices](https://neo4j.com/blog/dark-side-neo4j-worst-practices/)
 * [Quackit tutorial](https://www.quackit.com/neo4j/tutorial/)
 
+Tips & Tricks
+
+* [Common confusion](https://neo4j.com/blog/common-confusions-cypher/)
 
 Reference
 
@@ -24,35 +27,31 @@ Reference
 * [Neo4j graph algorithms](https://neo4j.com/docs/graph-algorithms/3.4/)
 * [Neo4j ops manual](https://neo4j.com/docs/operations-manual/current/)
 * [Cypher Style Guide](https://github.com/opencypher/openCypher/blob/master/docs/style-guide.adoc)
+* [APOC](https://github.com/neo4j-contrib/neo4j-apoc-procedures)
+
+Perf Tuning
+
+* [Ops manual: perf](https://neo4j.com/docs/operations-manual/current/performance/#memory-tuning)
 
 
+Interesting
+
+* [Modeling files and permissions](https://maxdemarzi.com/2013/03/18/permission-resolution-with-neo4j-part-1/)
+
+**TODO** a useful cheat sheet I should steal from: 
+
+* https://gist.github.com/DaniSancas/1d5265fc159a95ff457b940fc5046887
+* https://www.remwebdevelopment.com/blog/sql/some-basic-and-useful-cypher-queries-for-neo4j-201.html
 
 ## Modeling
 
 What are the key design decisions?
 
-
-## Generating data
-
-### Python generated queries
-
-
-
-
-## Transforming data
-
-
-## Importing
-
-* Paste cypher into http client - few hundred lines
-* Load cypher file
-
-
-### CSV import
-
-
+* [https://neo4j.com/blog/data-modeling-basics/](https://neo4j.com/blog/data-modeling-basics/)
 
 ## Queries
+
+**NOTE**: These queries use the neo4j-play test set
 
 ### Syntax notes
 
@@ -68,9 +67,9 @@ References are added to elements so you can refer to those elements later in a q
 
 Relationships are wrapped with square brackets
 
-* `-[:CHILD]->` - named, directed relationship
-* `(p1)-[c:CHILD]->(p2)` - named, directed relationship between nodes
-* `(p1)<-[:PARENT]-(p2)` - directions can be specified
+* `-[:CHILD_OF]->` - named, directed relationship
+* `(p1)-[c:CHILD_OF]->(p2)` - named, directed relationship between nodes
+* `(p1)<-[:PARENT_OF]-(p2)` - directions can be specified
 
 
 The basic relationship forms are:
@@ -96,16 +95,22 @@ From the [Style Guide](https://github.com/opencypher/openCypher/blob/master/docs
 
 Before adding data, we need to setup constraints to prevent creating duplicate nodes - we want each node to represent exactly one item ITRW.
 
-Notes: 
+**Notes**: 
 
 * CREATEs will throw errors if the node, edge already exists, so we must write more resilient CREATE statements.
 * No unique constraints on relationships - always use MERGE to create a relationship
 
 ```
-# Each node instance is unique, as identified by its id
+// Each node instance is unique, as identified by its id
+// Creates an index on id
 CREATE CONSTRAINT ON (d:Directory)      ASSERT d.id IS UNIQUE;
 CREATE CONSTRAINT ON (f:File)           ASSERT f.id IS UNIQUE;
 CREATE CONSTRAINT ON (c:Classification) ASSERT c.id IS UNIQUE;
+
+// Remove these constraints
+DROP CONSTRAINT ON (d:Directory)      ASSERT d.id IS UNIQUE;
+DROP CONSTRAINT ON (f:File)           ASSERT f.id IS UNIQUE;
+DROP CONSTRAINT ON (c:Classification) ASSERT c.id IS UNIQUE;
 ```
 
 **NOTE**: Node key and property constraints available only in enterprise edition (e.g. throw error when creating a node without an id)
@@ -123,20 +128,74 @@ Create a relationship. Note: always use `MERGE` in this case to avoid creating d
 ```
 MATCH (d:Directory), (f:File)
 WHERE d.id = 9437821 AND f.id = 9446967
-MERGE (d) - [:PARENT] -> (f)
+MERGE (d) - [:PARENT_OF] -> (f)
 ```
 
 Create directed graph entry - combining the two above into a single statment
 
 ```
-CREATE (:Directory {name:'etc'})  - [:PARENT] -> (:Directory {name:'conf.d'})
-CREATE (:Directory {name:'etc'}) <- [:CHILD]  -  (:Directory {name:'conf.d'})
+CREATE (:Directory {name:'etc'})  - [:PARENT_OF] -> (:Directory {name:'conf.d'})
+CREATE (:Directory {name:'etc'}) <- [:CHILD_OF]  -  (:Directory {name:'conf.d'})
 
 # No - an undirected relationship is not supported as a create
 CREATE (:Directory {name:'etc'})  - [:NEAR]   -  (:Directory {name:'conf.d'})
 ```
 
-Create a single node and many relationships to existing objects:
+**Notes**: 
+
+* You can create a node with multiple labels - where it makes sense: `CREATE (:Directory:SymLink {id: 'xxxxx'})`
+
+## Merging nodes
+
+MERGE statements combine CREATE and MATCH; if the node does not exist, it is created, if it does exist, it is matched. All elements of the MERGE pattern must be met for it to be matched. Because we ensure the `id` is unique on all nodes, we can simply match on the `id`.
+
+MERGE provides conditional blocks for both CREATE and MATCH, allowing different actions to be taken in each case.
+
+Multiple create statements for the same node. Use case: we may get full data from an api call multiple times - using MERGE ON CREATE SET allows us to create the node without violating constraints and generating an error. Two forms are shown.
+
+```
+// This merge matches nodes given all elements. If the node was previously created and some data
+// has changed, it generates a constraint violation.
+MERGE (:File {id: 94475611, name: 'foo.xml', stem: 'foo', extension: '.xml'})
+
+// This merge matches only the unique identifier and will avoid the constraint violation
+MERGE (f:File {id: 94475611})
+ON CREATE SET
+    f.name = 'foo.xml', f.stem = 'foo', f.extension = '.xml'
+```
+
+Create a node with partial data, then later add remaining data. Use case: we get partial data returned from an api call, and a later call provides more data. Or, we don't know if the existing node has all data.
+
+```
+// Pass 1: we are only give the item id - we form the property list with the information provided
+MERGE (f:File {id: 94475612})
+RETURN f
+
+// Later, we are given full information and include that in the ON MATCH SET.
+// This could be used in the distant future to capture
+MERGE (f:File {id: 94475612})
+ON MATCH SET
+    f.name = 'bar.xml', f.stem = 'bar', f.extension = '.xml'
+RETURN f
+```
+
+### Creating relationships
+
+Create a relationship with possibly sparse data:
+
+* The nodes may have already been specified
+* The nodes may not exist
+* The relationship between the nodes is given
+
+```
+MERGE (d:Directory {id: 444})
+MERGE (f:File {id: 555})
+MERGE (f) - [:CHILD_OF] -> (d) - [:PARENT_OF] -> (f)
+RETURN d,f
+```
+
+Note: because we MERGEd the relationship, no duplicate relationships are created
+
 
 ### Apply classifications
 
@@ -148,172 +207,217 @@ Two approaches:
     * Suspect it will be more performant with large number of classifications - reduced nodes/edges to process
 * Create a classification node and edges define the classification
 
+Example of single classification node - just fyi - won't use
 
 ```
-# Attach a classification `code` to every python file
-CREATE (:Classification {id: 'code', name: 'code'});
+CREATE (c:Classification {id: 'classifications', name: 'classifications'})
+WITH c
+MATCH (code:File {extension: 'py'}), (text:File {extension: 'txt'})
+MERGE (code) - [:IS_CODE] -> (c);
+MERGE (text) - [:IS_TEXT] -> (c);
+```
 
-MATCH (f:File {extension: '.py'}), (c:Classification {id: 'code'})
+Attach a new classification `code` to every python file
+
+```
+CREATE (c:Classification {id: 'code', name: 'code'})
+WITH c
+MATCH (f:File {extension: 'py'})
 MERGE (f) - [:IS_CLASSIFIED] -> (c);
 
-# One more
-CREATE (:Classification {id: 'text', name: 'text'});
-
-MATCH (f:File {extension: '.txt'}), (c:Classification {id: 'text'})
+CREATE (c:Classification {id: 'text', name: 'text'})
+WITH c
+MATCH (f:File {extension: 'txt'})
 MERGE (f) - [:IS_CLASSIFIED] -> (c);
 ```
 
-Example of single classification node
+Any qualification (WHERE clause) can be used
 
 ```
-CREATE (:Classification {id: 'id'});
-
-MATCH (f:File {extension: '.py'}), (c:Classification {id: 'id'})
-MERGE (f) - [:IS_CODE] -> (c);
+CREATE (c:Classification {id: 'big', name: 'big'})
+WITH c
+MATCH (f:File)
+WHERE f.size > 10000
+MERGE (f) - [:IS_CLASSIFIED] -> (c);
 ```
 
-
-**TODO** Finish this example vvv
-
-Create a relationship when nodes may not exist. Because each node may have many children, we cannot use CREATE for each node relationship - the first will succeeed and the rest will fail the uniqueness constraint. We can always, safely use a MERGE and it will create what does not exist.
+Even regex - all items that have `neo` in the name
 
 ```
-MERGE (d:Directory {id: 94378211}), (f:File {id: 94469671})
-ON CREATE
-    d.name = 'neo4j-play', d.stem = 'neo4j-play', d.extension = ''
-    f.name = 'constraints.txt', f.stem = 'constraints', f.extension = 'txt'
-MERGE 
-    (d)  - [:PARENT] -> (f)
-    (d) <- [:CHILD]  - (f)
+CREATE (c:Classification {id: 'neo', name: 'neo'})
+WITH c
+MATCH (n)
+WHERE n.name =~ '.*[Nn]eo.*' AND (n:Directory OR n:File)
+MERGE (n) - [:IS_CLASSIFIED] -> (c);
 ```
 
-Add a child to a node that may already exist (upsert)
+**NOTES**:
+
+* String comparisons (also allows NOT)
+    * STARTS WITH
+    * ENDS WITH
+    * CONTAINS
+* List comprehensions (and ranges)
+* Many python idioms - makes Cypher very expressive
+
+Delete a single classification and all relationships
 
 ```
-MERGE  (d:Directory {id: 'guid', name:'conf.d'})
-CREATE (d) - [:CHILD] -> (:File {id:'guid', name:'myconf.conf'})
+MATCH (c:Classification {id: 'neo'})
+DETACH DELETE c
 ```
 
-Let's improve the above. If the merge results in a create, we want to properly initialize the directory
+### Use case queries
+
+**Assumptions**
+
+* Data loaded is what perspective can see
+
+Count items monitored, classifications
 
 ```
-MERGE  (d:Directory {id: 'guid', name:'conf.d'})
-ON CREATE SET
-    d.access = 'perms'
-    d.
-CREATE (d) - [:CHILD] -> (:File {id:'guid', name:'myconf.conf'})
+MATCH (n)
+WHERE n:Directory OR n:File
+RETURN COUNT(*) as monitored_count
+
+MATCH (n)
+WHERE n:Classification
+RETURN COUNT(*) as classification_count
 ```
 
-Finally, let's handle the case where the file exists before the directory
+Items that are / are not classified
 
 ```
-MERGE  (d:Directory {id: 'guid', name:'conf.d'})
-ON CREATE SET
-    d.access = 'perms'
-    d.
-MERGE (d) - [:CHILD] -> (:File {id:'guid', name:'myconf.conf'})
+// Any type of classification
+MATCH (n) - [:IS_CLASSIFIED] -> (:Classification)
+WHERE n:File OR n:Directory
+RETURN n
+
+// Include the classifications in result
+MATCH (n) - [:IS_CLASSIFIED] -> (c:Classification)
+WHERE n:File OR n:Directory
+RETURN n,c
+
+// Unclassified things - including classification in result for verfication
+MATCH (n), (c:Classification)
+WHERE 
+    (n:File OR n:Directory)
+    AND NOT exists ((n) - [:IS_CLASSIFIED] -> ())
+RETURN n,c
 ```
 
-Create always bi-directional entry (parent-child)
-
-### Set properties on an existing node
-
-```
-MATCH  (p:Directory)-[:Parent]->(f:File)
-WHERE  
-    d.name = 'conf.d'
-    f.name = 'myconf.conf'
-SET    f.access = 766
-RETURN f
-
-# could also set by object
-SET f += {access: 766}
-```
-
-Return the path to an item
-
-All files with a `conf` suffix
-
-```
-MATCH  (f:File)
-WHERE  f.extension = "conf"
-RETURN f
-
-MATCH  (f:File {extension: 'conf'})
-RETURN f
-
-# perhaps this as well
-MATCH  (File {extension: 'conf'})
-```
-
-Add an edge from an existing node to an existing node
-
-Add classification to nodes
-
-How to keep each customer's data separate?
-
-Create a file in an existing directory
-
-create (:Directory {name:'etc'}) - [:PARENT] -> (:Directory {name:'conf.d'})
-
-### Advanced queries
+**TODO** ^^^ verify on clean data
 
 Find items with Classification `code`
 
 ```
-MATCH (n) - [:IS_CLASSIFIED] -> (:Classification {id: 'text'}) RETURN n
-
-# For presentation, this includes the classification
-MATCH (n) - [:IS_CLASSIFIED] -> (c:Classification {id: 'text'}) RETURN n,c
+MATCH (n) - [:IS_CLASSIFIED] -> (c:Classification {id: 'code'})
+RETURN n,c
 ```
 
-Find decendents of
+Find items without Classification `code`
 
+**TODO**
+```
+MATCH (n), (c:Classification {id: 'code'})
+WHERE 
+    (n:Directory OR n:File)
+    AND NOT exists((n)-[:IS_CLASSIFIED]->(c))
+return n
+
+// You can check results with this, verifying 2 python files not present, code class node disconnected
+MATCH (n), (all_c:Classification), (c:Classification {id: 'code'})
+WHERE 
+    (n:Directory OR n:File)
+    AND NOT exists((n)-[:IS_CLASSIFIED]->(c))
+return n,all_c,c
 ```
 
+Find decendents of (sub-tree)
+
+```
+MATCH (d:Directory {name: '.git'}) - [:PARENT_OF*] -> (n)
+RETURN d,n
+
+// Or
+MATCH (d:Directory {name: '.git'}) <- [:CHILD_OF*] - (n)
+RETURN d,n
+```
+
+Find all decendent files (selective sub-tree)
+
+```
+MATCH (d:Directory {name: '.git'}) - [:PARENT_OF*] -> (n {owner: 501})
+RETURN d,n
+
+// Or
+MATCH (d:Directory {name: '.git'}) <- [:CHILD_OF*] - (n {owner: 501})
+RETURN d,n
 ```
 
 Find ancestors of
 
 ```
+MATCH (n) - [:PARENT_OF*] -> (d:Directory {name: 'hooks'})
+RETURN n,d
+
+// Or
+MATCH (n) <- [:CHILD_OF*] - (d:Directory {name: 'hooks'})
+RETURN n,d
 ```
 
-Find all decendent files
+**NOTE**: The above prove that we only need a PARENT_OF relationship
+
+## Set operations
+
+1. Identify the root of each sub-tree: id
+1. Identify the properties that make nodes "identical": name
+
+The `diff_trees` directory is set up to provide comparisons
+
+* `diff_trees/a`: id = 9666518
+* `diff_trees/b`: id = 9666529
+
+Difference
+
+```
+MATCH (a:Directory {id: 9666518}) - [:PARENT_OF*] -> (a_child)
+MATCH (b:Directory {id: 9666529}) - [:PARENT_OF*] -> (b_child)
+WITH collect(DISTINCT b_child.name) as b_names, collect(DISTINCT a_child.name) as a_names
+RETURN filter(x IN a_names WHERE not(x in b_names))
+```
+
+Intersection
 
 ```
 ```
 
-Find everything a perspective can see. This is an attribute search, so we need to know the access model. E.g. is user the owner, in the group, or is the file publicly visible - more attributes mean simpler queries.
-
-**TODO** enhance this to reflect comments
+Union
 
 ```
-MATCH (n {owner: 501}) RETURN n
+MATCH (d:Directory) - [:PARENT_OF*] -> (child)
+WHERE d.id IN [9666518, 9666529]
+// Can return all matching properties (exclude timestamps)
+RETURN DISTINCT child.name, child.owner
 ```
 
-ops
-create
-classify (by reg ex)
+Note: separate MATCH statements avoid building a cartesian product
 
-whitelist clasification
-all data in this classification (set of classes)
-all data not in this classification (set of classes)
-node by id
-
-blacklist
-subset of above
-
-diff of trees
-counts of all above
-
-all classifications not included in this set
-
-
+## Misc queries
 
 Return this path and the nodes that match
 
 ```
-MATCH  path = (:Directory) - [:CHILD] -> (:Directory)
+// Returns all dirs that are parent dirs
+MATCH  (d:Directory) - [:PARENT_OF] -> (:Directory)
+RETURN d
+
+// Returns all dirs that are parent dirs and the child dir under two columns (d, dd)
+MATCH  (d:Directory) - [:PARENT_OF] -> (dd:Directory)
+RETURN d,dd
+
+// Returns all dirs that are parents of a dir, and the child dir, in a single column 'path'
+MATCH  path = (:Directory) - [:PARENT_OF] -> (:Directory)
 RETURN path
 ```
 
@@ -335,24 +439,48 @@ Grouping is implict by any non-aggregate fields
 RETURN p.name, count(*) as movie_count
 ```
 
-See APOC library for 400 user defined functions
+# Ingestion
 
-Where clause - much like SQL
+## General perf tuning
 
-null means does not exist - cannot assign null
+* Turn indexing off for 3x perf gain
+* Creates are faster than MERGE because there is no lookup
+* Memory tuning
 
-**TODO** Add a classification - all files with perms x
+conf/neo4j.conf
 
+* dbms.threads.worker_count
+* memory
+
+## CSV
+
+* If we mount the imports directory, we can simply put the CSV in it. `dbms.directories.import=import`
+
+
+
+# TODO
+
+* How to keep each customer's data separate?
+* hierarchical classifications
+* See APOC library for 400 user defined functions
+
+
+## Versioning graphs
+
+How do we take snapshots of a given point in time?
 
 ## Indexes
 
+```
+CREATE INDEX ON :Directory(name)
+```
+
+**NOTES**:
+
+* Creating an index constraint implies a 'pk' index
+
 **TODO** Identify common query patterns and index appropriate fields
 
-```
-CREATE INDEX ON :Album(Name)
-```
-
-## Exporting
 
 
 ## Deployment
@@ -361,27 +489,11 @@ CREATE INDEX ON :Album(Name)
 
 
 
-# Bulk import
+# Db organization
 
-Cypher
-
-* Paste into browser for small jobs
-* For medium sized jobs
-    ```
-    docker exec -it neo bash -c "cat /project/${1} | /var/lib/neo4j/bin/cypher-shell -u neo4j -p Admin1234!"
-    ```
-
-CSV is the fastest, [this article](https://neo4j.com/blog/import-10m-stack-overflow-questions/) claiming 10^6 SO questions imported in 3 min.
-
-See `:help load csv`, can gzip the files
-
-# Imports
-
-Create order
-
-1. nodes
-1. indexes
-1. relations
+* How should this be organized for customer isolation, etc.
+* What is best use of separate databases
+* 
 
 # Python drivers
 
@@ -397,3 +509,22 @@ Create order
 Useful commands
 
 * `:sysinfo` - system metrics
+
+
+# Lessons learned
+
+## Imports
+
+### Creates are faster than Merge
+
+So the optimally performing strategy for small batches is:
+
+1. Create all nodes with ref vars
+1. Create all relationships using ref vars
+
+This eliminates an initial search that must be done in the MERGE case - to determine if the element is matched or needs to be created.
+
+
+### LOAD FROM CSV
+
+Is not the magic bullet I thought it was - it just becomes a data source where you write a few queries fed by that data.
