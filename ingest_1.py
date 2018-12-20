@@ -1,6 +1,24 @@
 #!/usr/bin/env python3
 """
-Strategy: create a single file with only create statements for both nodes and edges
+Key: Ingest strategy 1: One create group
+
+Strategy:
+- one file has all node, edge CREATE stmts, one run()
+
+Process:
+Process each dataset to find the optimal number of nodes per file, and the filesize limit
+pass 1
+    for each dir
+    - create all child nodes with ref var
+    - recurse for each dir
+pass 2
+    for each dir
+    - create parent edge to self for each child
+    - recurse for each dir
+    
+NOTES:
+- very easy to reason about
+- max # of stmts in a file heavily dependent on server RAM config
 """
 import pickle
 import sys
@@ -36,7 +54,7 @@ def gen_cypher(origin: TreeNode) -> None:
 
 for p in sorted(Path('./pickles').iterdir()):
     with open(f"{p}", "rb") as infile:
-        with open(f"cypher/{p.stem}.cypher", "w") as outfile:
+        with open(f"cypher/i1_{p.stem}.cypher", "w") as outfile:
             sys.stdout, tmp = outfile, sys.stdout
             gen_cypher(pickle.load(infile))
             sys.stdout = tmp

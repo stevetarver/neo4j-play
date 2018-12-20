@@ -7,7 +7,7 @@ class Node(NamedTuple):
     name: str
     tag: str
     id: int
-    parent_id: int
+    parent_id: Optional[int] # None for root node
     stem: str
     extension: str
     path: str
@@ -71,15 +71,15 @@ def new_node(p: Path) -> Node:
     data = {
         "tag": "Directory" if p.is_dir() else "File",
         "id": stats.st_ino,
-        "parent_id": p.parent.stat().st_ino,
+        "parent_id": p.parent.stat().st_ino if p.parent else None,
         "name": p.name,
         "stem": p.stem,
         "extension": p.suffix[1:],  # omit the leading dot
         "path": p.absolute(),
         "size": stats.st_size,
-        "created": stats.st_ctime,
-        "accessed": stats.st_atime,
-        "modified": stats.st_mtime,
+        "created": int(stats.st_ctime),
+        "accessed": int(stats.st_atime),
+        "modified": int(stats.st_mtime),
         "owner": stats.st_uid,
         "group": stats.st_gid,
     }

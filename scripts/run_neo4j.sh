@@ -12,9 +12,9 @@ fi
     # Run from project root
     cd ${THIS_SCRIPT_DIR}/..
 
-    NEO4J_DIR='neo4j_docker_volume'
+    NEO4J_DATA_DIR="neo4j/docker/data"
     PROJECT_DIR=$(pwd)
-    DATA_DIR="${PROJECT_DIR}/${NEO4J_DIR}"
+    DATA_DIR="${PROJECT_DIR}/${NEO4J_DATA_DIR}"
     CTNR_NAME="neo"
 
     # A start is a restart; stop the container, blow away data, fresh plate
@@ -25,11 +25,15 @@ fi
         docker rm -f ${EXISTING}
     fi
 
-    if [ -d "${NEO4J_DIR}" ]; then
-        echo "Deleting existing data in ${NEO4J_DIR}"
-        rm -rf "${NEO4J_DIR}"
+    if [ -d "${NEO4J_DATA_DIR}" ]; then
+        echo "Deleting existing data in ${NEO4J_DATA_DIR}"
+        rm -rf "${NEO4J_DATA_DIR}"
     fi
-    mkdir "${NEO4J_DIR}"
+    mkdir -p "${NEO4J_DATA_DIR}"
+    ERROR="${?}"
+    if [ 0 -ne ${ERROR} ]; then
+        exit ${ERROR}
+    fi
 
     echo "Running Neo4j"
     docker run -d                   \

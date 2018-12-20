@@ -1,5 +1,16 @@
 # Neo4j Ingestion
 
+## Strategies
+
+Note: the 'I*' keys are 'Ingestion {strategy num}' and used throughout the test code
+
+* **One create group** I1: in a single file - every statement is a CREATE which avoids the lookup penalty for a MERGE. node count limited by server memory and configuration
+* **Create groups** I2: - every statement is a create, but organized into groups that can be created without dependencies
+* **Match perfect data** I3: - assumes that all data is known prior to ingestion, but too large to ingest in a single puff. Use a combination of CREATE and MATCH because we count on sequential stmt execution.
+* **Merge imperfect data** I4: - assumes we don't know the order of statement execution or if we have all information at the time of create. We create what we know and then update nodes as more data is available.
+* **Merge imperfect data spray** I5: - same as above, but use a session pool to have many workers on the same job.
+* **CSV** I6 - we can generate a CSV of perfect data and a small set of statements that generate everything, one line at a time. Because we specify types in col headers and neo4j has all the data already parsed, there could be some hidden advantages.
+
 ## General perf tuning
 
 * Turn indexing off for 3x perf gain
@@ -121,3 +132,22 @@ Notes:
 
 * Large dataset imports should use the offline tool
 * `apoc.import.csv` can be used for small to medium datasets
+
+
+# Lessons learned
+
+## Imports
+
+### Creates are faster than Merge
+
+So the optimally performing strategy for small batches is:
+
+1. Create all nodes with ref vars
+1. Create all relationships using ref vars
+
+This eliminates an initial search that must be done in the MERGE case - to determine if the element is matched or needs to be created.
+
+
+### LOAD FROM CSV
+
+Is not the magic bullet I thought it was - it just becomes a data source where you write a few queries fed by that data.

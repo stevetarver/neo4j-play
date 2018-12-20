@@ -7,7 +7,7 @@ import argparse
 import pickle
 from pathlib import Path
 
-from node import TreeNode, new_node
+from node import TreeNode, new_node, Node
 
 # The directory I scan. It has many things pruned for this purpose - hence the pickles, so data is reproducible
 ROOT = "/Users/starver/code/public/cpython"
@@ -67,9 +67,14 @@ def collect_data_recurse(p: Path, tree_node: TreeNode) -> None:
 def collect_data() -> TreeNode:
     """
     Generate hierarchical file data
+    
+    CAVEATS:
+    - we manually set the root parent_id to None to indicate it is the root
     """
     root = Path(ROOT)
-    result = TreeNode(me=new_node(root), files=[], dirs=[])
+    node = new_node(root)._asdict()
+    node["parent_id"] = None
+    result = TreeNode(me=Node(**node), files=[], dirs=[])
     collect_data_recurse(root, result)
     return result
 
@@ -89,7 +94,7 @@ def pickle_datasets() -> None:
                 files += 1
         print(f"'{case}': {{'nodes': {dirs + files}, 'dirs': {dirs}, 'files': {files}}},")
         
-        with open(f"pickles/gd1_{case}.pickle", "wb") as f:
+        with open(f"pickles/{case}.pickle", "wb") as f:
             pickle.dump(collect_data(), f)
 
 

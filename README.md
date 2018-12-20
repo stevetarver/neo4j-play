@@ -494,20 +494,3 @@ Useful commands
 * `:sysinfo` - system metrics
 
 
-# Lessons learned
-
-## Imports
-
-### Creates are faster than Merge
-
-So the optimally performing strategy for small batches is:
-
-1. Create all nodes with ref vars
-1. Create all relationships using ref vars
-
-This eliminates an initial search that must be done in the MERGE case - to determine if the element is matched or needs to be created.
-
-
-### LOAD FROM CSV
-
-Is not the magic bullet I thought it was - it just becomes a data source where you write a few queries fed by that data.

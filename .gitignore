@@ -213,4 +213,4 @@ venv.bak/
 .mypy_cache/
 
 /.idea
-/neo4j_docker_volume/
+/neo4j/docker/
