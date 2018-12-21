@@ -24,6 +24,7 @@ import pickle
 import sys
 from pathlib import Path
 
+from gen_data import CASE_INFO, pickle_file, cypher_file
 from node import TreeNode
 
 
@@ -41,7 +42,7 @@ def gen_edges(origin: TreeNode) -> None:
     """ Traverse tree, only creating edges """
     me = origin.me
     for i in origin.files + [x.me for x in origin.dirs]:
-        print(f"CREATE ({me.ref}) - [:PARENT_OF] -> ({i.ref})")
+        print(f"CREATE ({me.var}) - [:PARENT_OF] -> ({i.var})")
     for d in origin.dirs:
         gen_edges(d)
 
@@ -52,11 +53,12 @@ def gen_cypher(origin: TreeNode) -> None:
     gen_edges(origin)
 
 
-for p in sorted(Path('./pickles').iterdir()):
-    with open(f"{p}", "rb") as infile:
-        with open(f"cypher/i1_{p.stem}.cypher", "w") as outfile:
+for case, info in CASE_INFO.items():
+    with open(pickle_file(case), "rb") as infile:
+        cypher_fn = cypher_file(case, 'i1')
+        with open(cypher_fn, "w") as outfile:
             sys.stdout, tmp = outfile, sys.stdout
             gen_cypher(pickle.load(infile))
             sys.stdout = tmp
-            print(f"generated {p.stem}")
+            print(f"generated {cypher_fn}")
 

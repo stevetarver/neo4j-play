@@ -4,6 +4,14 @@ import json
 
 
 class Node(NamedTuple):
+    """
+    Common ways to reference self and parts
+    n123                            var - uniquely identifies this node, used in most other constructs
+    (n123)                          ref - once a node is created/merged/matched, use this
+    (n123:Directory)                ??? - not sure we ever need this
+    (n123:Directory {id: 123})      node_ref - match with this (sometimes merge)
+    (n123:Directory {id: 123, ...}) node - create node syntax
+    """
     name: str
     tag: str
     id: int
@@ -33,20 +41,21 @@ class Node(NamedTuple):
     
     def node(self) -> str:
         """ A completely specified node """
-        return f"({self.ref}:{self.tag} {{{self.colon_args()}}})"
+        return f"({self.var}:{self.tag} {{{self.colon_args()}}})"
     
     @property
-    def ref(self):
-        return f"n{self.id}"
+    def ref(self) -> str:
+        """ The node ref used when constructing relationships """
+        return f"({self.var})"
     
-    def short_node(self) -> str:
+    def node_ref(self) -> str:
         """ A minimally specified node. For MATCH, MERGE """
-        return f"({self.ref}:{self.tag} {{id: {self.id}}})"
+        return f"({self.var}:{self.tag} {{id: {self.id}}})"
 
     @property
-    def var(self) -> str:
-        """ Print self's variable for node generation: (n123) """
-        return f"({self.ref})"
+    def var(self):
+        """ The node variable name I am normally created with """
+        return f"n{self.id}"
 
     def _asdict_quoted(self) -> Dict:
         """ _asdict() but strings, dates are quoted """
@@ -63,7 +72,7 @@ class Node(NamedTuple):
     
     def __repr__(self):
         # Pretty cool, but Neo4j doesn't like the double quoted property names
-        return f"({self.ref}:{self.tag} {json.dumps(self._asdict(), sort_keys=True, default=str)})"
+        return f"({self.var}:{self.tag} {json.dumps(self._asdict(), sort_keys=True, default=str)})"
 
 
 def new_node(p: Path) -> Node:
@@ -126,33 +135,3 @@ class TreeNode(NamedTuple):
             d.print(indent + 2)  # recurse subtree
         for f in self.files:
             print(f"{' ' * (indent + 2)}{f}")
-
-    # TODO: Does this functionality belong here? May have multiple strategies
-    """
-    could have a selector of CREATE, MERGE, MATCH
-    CREATE all nodes, rels
-    MERGE implies an ON CREATE SET, ON MATCH SET
-    MATCH kinda assumes all nodes created
-    
-    Now that we have a single relation and the parent id, we could just use the iterator to gen cypher
-    """
-    def _cypher_recurse(self) -> None:
-        """
-        The protected method is the part that actually recurses
-        """
-        # create children
-        for i in self.files + [x.me for x in self.dirs]:
-            print(f"MATCH {self.me.short_node()} - [:PARENT_OF] -> {i}")
-
-        # tell child dirs to cypher
-        for d in self.dirs:
-            d._cypher_recurse()
-
-    # TODO: Does this functionality belong here? May have multiple strategies
-    def cypher(self) -> None:
-        """
-        Represent myself and all children as cypher nodes and relationships
-        """
-        # create self
-        print(f"CREATE {self.me}")
-        self._cypher_recurse()

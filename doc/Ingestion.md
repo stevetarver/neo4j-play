@@ -4,12 +4,75 @@
 
 Note: the 'I*' keys are 'Ingestion {strategy num}' and used throughout the test code
 
-* **One create group** I1: in a single file - every statement is a CREATE which avoids the lookup penalty for a MERGE. node count limited by server memory and configuration
-* **Create groups** I2: - every statement is a create, but organized into groups that can be created without dependencies
-* **Match perfect data** I3: - assumes that all data is known prior to ingestion, but too large to ingest in a single puff. Use a combination of CREATE and MATCH because we count on sequential stmt execution.
-* **Merge imperfect data** I4: - assumes we don't know the order of statement execution or if we have all information at the time of create. We create what we know and then update nodes as more data is available.
-* **Merge imperfect data spray** I5: - same as above, but use a session pool to have many workers on the same job.
-* **CSV** I6 - we can generate a CSV of perfect data and a small set of statements that generate everything, one line at a time. Because we specify types in col headers and neo4j has all the data already parsed, there could be some hidden advantages.
+### Ingest 1: One create group
+
+_Description:_ A `run()` execution whose statements are only CREATE node, then CREATE relationship. CREATEs avoid the lookup penalty for a MERGE and are theoretically faster. Content of a single `run()` is limited by server memory and configuration.
+
+Implementation is two passes:
+
+* CREATE stmts for all nodes
+* CREATE stmts for all edges
+
+This strategy's benefit is that we don't have to define nodes or edges in any particular order; don't need to ensure an element has been created prior to reference. There are no dependencies between node CREATE statements and no dependencies between edge CREATE statements. As long as all nodes are defined prior to being referenced during edge creation, we are good.
+
+A decent strategy for up to 1750 nodes with default tuning.
+
+Notes:
+
+* The Neo4j config allows allocating a transaction memory heap to allow this size to grow
+* If we get 2000 elements/api call from Dropbox, we could boost memory and just use this mechanism for each api result.
+
+### Ingest 2: Create groups
+
+_Description:_ Every statement is a create, but organized into groups that can be `run()` separately.
+
+After writing Ingest 1, I added the `parent_id` to each node and eliminated cypher generation dependency on hierarchy traversal - because a node always knows its parent, a directory can always generate itself, its files, link to parent and link to files.
+
+This strategy uses that new ability and groups each directory's cypher statements so they can be processed in chunks appropriate to Neo4j write tuning.
+
+This strategy started out as a way to break the individual `run()` size limits. Unexpectedly, node reference variable lifetime is longer than a run(), a session, and a ';'. This means we could break a large dataset at any convenient point omitting the need for line spacing. This strategy can tackle potentially unbounded datasets.
+
+**TODO**: What is a node variable lifetime?
+      In our naive use, a session.run() is an autocommit
+      Node reference variable lifetime is longer than run(), session, and ';'
+
+
+### Ingest 3: Match perfect data - **DON'T USE**
+
+_Description:_ assumes that all data is known prior to ingestion, but too large to ingest in a single puff. Use a combination of CREATE and MATCH because we count on sequential stmt execution.
+
+This strategy started as mitigation for the `run()` size limit and assumed that variables would be invalidated. The strategy fails because of complications with MATCH and MERGE.
+
+* MATCH requires a WITH clause that rescopes variables, groups aggregates and frustrates subsequent statements
+* MERGE requires a unique variable name. We are using `n[self.id]` so if the node or edge has been referenced before, we see `Variable 'n9768633' already declared`.
+
+We can generate a new variable with an `m` prefix to avoid the MERGE problem, but results from Ingest 2 prove that it is not needed - a CREATE should always be faster because there is no index lookup required.
+
+### Ingest 4: Merge imperfect data
+
+_Description:_ assumes no order to information delivery and incomplete data. E.g. Dropbox returns a batch of json objects describing individual elements, but not in we don't know the order of statement execution or if we have all information at the time of create. We create what we know and then update nodes as more data is available.
+
+```cypher
+# Us the single constrained property to match any existing node.
+# Otherwise, we could fail to match [because some properties were not defined earlier] and create a duplicate node
+MERGE (n123:Directory {id: 123})
+# If the node does not exist - set all properties
+ON CREATE SET
+    name = '', ...
+# If the node already existed - update all properties to lates values
+ON MATCH SET
+    name = '', ...
+```
+
+### Ingest 5: Merge imperfect data spray
+
+_Description:_ same as above, but use a session pool to have many workers on the same job.
+
+
+### Ingest 6: CSV
+
+_Description:_ we can generate a CSV of perfect data and a small set of statements that generate everything, one line at a time. Because we specify types in col headers and neo4j has all the data already parsed, there could be some hidden advantages.
+
 
 ## General perf tuning
 
