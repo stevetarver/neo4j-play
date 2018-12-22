@@ -5,6 +5,7 @@ I create datasets of TreeNode hierarchies and pickle them for later use
 """
 import argparse
 import pickle
+from argparse import RawDescriptionHelpFormatter
 from pathlib import Path
 from typing import Optional
 
@@ -33,41 +34,39 @@ CASE_INFO = {
 }
 
 
-def _get_filename(kind: str, case: str, ingest_key: Optional[str] = None) -> str:
-    if case not in CASE_INFO:
-        raise ValueError(f"Unknown case: {case}")
-    if "pickle" == kind:
-        fn = f"./pickles/{case}.pickle"
-    elif "cypher" == kind:
-        fn = f"./cypher/{ingest_key}_{case}.cypher"
-    else:
-        raise ValueError(f"Unknown file kind: {kind}")
-    if not Path(fn).exists():
-        raise ValueError(f"Pickle does not exist: {fn}")
-    return fn
-
-
-def pickle_file(case: str) -> str:
+def pickle_file(case: str, must_exist: bool=True) -> str:
     """
     Generate a path to a valid pickle file
     :param case: a use case - a key from CASE_INFO
+    :param must_exist: True if reading, False if writing
     :return: a cypher file name
     """
-    return _get_filename("pickle", case)
+    if must_exist and case not in CASE_INFO:
+        raise ValueError(f"Unknown case: {case}")
+    fn = f"./pickles/{case}.pickle"
+    if must_exist and not Path(fn).exists():
+        raise ValueError(f"Pickle file does not exist: {fn}")
+    return fn
 
 
-def cypher_file(case: str, ingest_key: str) -> str:
+def cypher_file(case: str, ingest_key: str, must_exist: bool=True) -> str:
     """
     Generate a path to a valid cypher file
     :param ingest_key: an ingest key, like i1, i2, i3
     :param case: a use case - a key from CASE_INFO
+    :param must_exist: True if reading, False if writing
     :return: a cypher file name
     """
-    return _get_filename("cypher", case, ingest_key)
+    if must_exist and case not in CASE_INFO:
+        raise ValueError(f"Unknown case: {case}")
+    fn = f"./cypher/{ingest_key}_{case}.cypher"
+    if must_exist and not Path(fn).exists():
+        raise ValueError(f"Cypher file does not exist: {fn}")
+    return fn
 
 
 # my home dir stats - not included in repo for privacy and size
-# ./gen_data.py -r /Users/starver -n case_2mil
+# ./generator.py -r /Users/starver -n case_2mil
 # 'case_2mil': {'nodes': 1912541, 'dirs': 538632, 'files': 1373909},
 
 # Conditionally exclude directories from target to hit goal node counts
@@ -128,7 +127,7 @@ def remove_root_parent(root: TreeNode) -> TreeNode:
 def pickle_dataset(p: Path, case: str) -> None:
     root = collect_data(p)
     print_stats(root, case)  # so you can add to CASE_INFO
-    with open(pickle_file(case), "wb") as f:
+    with open(pickle_file(case, False), "wb") as f:
         pickle.dump(remove_root_parent(root), f)
 
 
@@ -166,27 +165,40 @@ def dir_counts(p: Path) -> None:
     dir_counts_recurse(root)
 
 
+def help():
+    return """Collect dir/file metadata and pickle
+
+The 'default' generation creates target sized sets of dir/file data from the cpython repo.
+
+You can generate a large set from your home directory:
+  ./generate.py -r /Users/me -n my_home
+
+You can list directory contents and descendent count to help exclude dirs to reach a target node count:
+  ./generator.py -l -r /Users/me
+"""
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Collect dir/file metadata and pickle")
-    parser.add_argument('-r', '--root',
-                        default="/Users/starver/code/public/cpython",
-                        help='root directory - where to start parsing')
-    parser.add_argument('-n', '--name',
-                        default="funky-karmikel",
-                        help='pickle file name')
-    parser.add_argument('-d', '--default',
+    parser = argparse.ArgumentParser(description=help(), formatter_class=RawDescriptionHelpFormatter)
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('-d', '--default',
                         action='store_true',
                         default=False,
                         help='generate default datasets (using default dir)')
-    parser.add_argument('-l', '--list',
+    group.add_argument('-l', '--list',
                         action='store_true',
                         default=False,
                         help='list node count for each dir in target dir')
+    group.add_argument('-r', '--root',
+                        help='root directory - where to start parsing')
+    parser.add_argument('-n', '--name',
+                        default="funky-karmikel",
+                        help='use case name - becomes the pickle file name')
     args = parser.parse_args()
     
     if args.default:
         print("===> Generating default datasets")
-        pickle_default_datasets(Path(ROOT))
+        pickle_default_datasets(Path("/Users/starver/code/public/cpython"))
         exit(0)
     
     p = Path(args.root)

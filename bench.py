@@ -23,7 +23,7 @@ TODO: categories
 import argparse
 from timeit import default_timer as timer
 
-from gen_data import CASE_INFO
+from generator import CASE_INFO
 from trinity import Trinity
 
 
@@ -102,6 +102,7 @@ def run_ingest_1(iterations: int) -> None:
             nc = case_info['nodes']
             nps = int(nc / duration)
             print(f"{ingest_key}_{case}\t{nc}\t{duration:.4f}\t{nps}")
+            return
 
 
 def run_ingest_2(iterations: int) -> None:
@@ -133,8 +134,8 @@ def main():
     # else:
     #     pickle_datasets()
     
-    # run_ingest_1(3)
-    run_ingest_2(1)
+    run_ingest_1(1)
+    # run_ingest_2(1)
 
 
 if __name__ == "__main__":

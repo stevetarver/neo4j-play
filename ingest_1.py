@@ -22,9 +22,8 @@ NOTES:
 """
 import pickle
 import sys
-from pathlib import Path
 
-from gen_data import CASE_INFO, pickle_file, cypher_file
+from generator import CASE_INFO, cypher_file, pickle_file
 from node import TreeNode
 
 
@@ -55,7 +54,7 @@ def gen_cypher(origin: TreeNode) -> None:
 
 for case, info in CASE_INFO.items():
     with open(pickle_file(case), "rb") as infile:
-        cypher_fn = cypher_file(case, 'i1')
+        cypher_fn = cypher_file(case, 'i1', False)
         with open(cypher_fn, "w") as outfile:
             sys.stdout, tmp = outfile, sys.stdout
             gen_cypher(pickle.load(infile))

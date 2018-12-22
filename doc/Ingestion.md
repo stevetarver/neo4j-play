@@ -52,6 +52,8 @@ We can generate a new variable with an `m` prefix to avoid the MERGE problem, bu
 
 _Description:_ assumes no order to information delivery and incomplete data. E.g. Dropbox returns a batch of json objects describing individual elements, but not in we don't know the order of statement execution or if we have all information at the time of create. We create what we know and then update nodes as more data is available.
 
+_Use case_: as we receive incremental results, we pass the result to Trinity to incrementally build the model so it is ready very nearly when all data has been received.
+
 ```cypher
 # Us the single constrained property to match any existing node.
 # Otherwise, we could fail to match [because some properties were not defined earlier] and create a duplicate node
@@ -64,9 +66,16 @@ ON MATCH SET
     name = '', ...
 ```
 
+Notes:
+
+* Because we will be ingesting a lot of data and referencing the same node multiple times, but we don't know in what order, we have to generate globally unique variable names.
+
+
 ### Ingest 5: Merge imperfect data spray
 
-_Description:_ same as above, but use a session pool to have many workers on the same job.
+_Description:_ same statement structure as above, but use a session pool to have many workers on the same job.
+
+The `run()` commands return very quickly, but neo4j processing take longer. We may be able to avoid wait time by transferring data more quickly.
 
 
 ### Ingest 6: CSV

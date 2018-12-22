@@ -1,6 +1,7 @@
-from pathlib import Path
-from typing import NamedTuple, List, Optional, Dict, Any
 import json
+from pathlib import Path
+from random import randint
+from typing import Dict, List, NamedTuple, Optional
 
 
 class Node(NamedTuple):
@@ -13,7 +14,7 @@ class Node(NamedTuple):
     (n123:Directory {id: 123, ...}) node - create node syntax
     """
     name: str
-    tag: str
+    tag: str  # TODO: in neo4j, I think this is better named a label - clean up, perhaps 'kind' is a better name
     id: int
     parent_id: Optional[int] # None for root node
     stem: str
@@ -33,7 +34,8 @@ class Node(NamedTuple):
 
     def equal_args(self) -> str:
         """ Cypher properties with =, delimiters. As used in ON CREATE SET """
-        args = [f"{k} = {v}" for k, v in self._asdict_quoted().items()]
+        # TODO: do we need to exclude id in all cases?
+        args = [f"{self.var}.{k} = {v}" for k, v in self._asdict_quoted().items() if "id" != k]
         return ", ".join(args)
     
     def is_dir(self):
@@ -61,6 +63,7 @@ class Node(NamedTuple):
         """ _asdict() but strings, dates are quoted """
         # Note: this strategy destroys the OrderedDictness
         return {k: v if isinstance(v, int) else f"'{v}'" for k, v in self._asdict().items()}
+        # this retains it
         # d = self._asdict()
         # for k, v in d.items():
         #     if not isinstance(v, int):
@@ -75,6 +78,20 @@ class Node(NamedTuple):
         return f"({self.var}:{self.tag} {json.dumps(self._asdict(), sort_keys=True, default=str)})"
 
 
+class RandomNode(Node):
+    """
+    Provide a random variable to Node
+    
+    Use case: Avoid: "Variable `n9768633` already declared" errors in ingest 4,5
+        when the default Node.var may have already been used
+    """
+    @property
+    def var(self):
+        if not hasattr(self, 'random_var'):
+            self.random_var = f"n{randint(0, 999_999_999)}"
+        return self.random_var
+
+    
 def new_node(p: Path) -> Node:
     stats = p.stat()
     data = {

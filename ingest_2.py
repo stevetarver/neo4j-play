@@ -25,7 +25,7 @@ import pickle
 import sys
 from pathlib import Path
 
-from gen_data import cypher_file
+from generator import cypher_file
 from node import TreeNode, Node
 
 

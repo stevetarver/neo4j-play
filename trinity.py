@@ -1,6 +1,11 @@
 """
 Trinity talks to Neo... A LOT
 
+
+NOTES:
+- Many methods return self so they can be chained:
+    Trinity().clean().run(stmts).create_constraints()
+
 Python driver choices:
  See https://neo4j.com/developer/python/#_neo4j_community_drivers
 
@@ -31,7 +36,7 @@ class Trinity:
     def __init__(self, url: str="bolt://localhost", user: str="neo4j", password: str="Admin1234!"):
         self._driver = GraphDatabase.driver(url, auth=basic_auth(user, password))
 
-    def clean(self) -> None:
+    def clean(self) -> "Trinity":
         """
         Clean the database in preparation for a test run
         - Remove all existing nodes and relationships
@@ -45,14 +50,16 @@ class Trinity:
         with self.session() as session:
             session.run("MATCH (n) DETACH DELETE n")
         self.drop_constraints()
+        return self
 
-    def create_constraints(self):
+    def create_constraints(self) -> "Trinity":
         """ Create constraints on the db """
         with self.session() as session:
             for c in [self._constraints.format(var=x.lower(), label=x) for x in self._labels]:
                 session.run("CREATE " + c)
+        return self
 
-    def drop_constraints(self):
+    def drop_constraints(self) -> "Trinity":
         """ Drop constraints on the db """
         with self.session() as session:
             for c in [self._constraints.format(var=x.lower(), label=x) for x in self._labels]:
@@ -61,6 +68,7 @@ class Trinity:
                 except:
                     # If the constraint does not exist, this will throw an exception - we don't care
                     pass
+        return self
 
     def session(self):
         """
@@ -72,3 +80,7 @@ class Trinity:
         """
         return self._driver.session()
 
+    def run(self, stmts: str) -> "Trinity":
+        with self.session() as session:
+            session.run(stmts)
+        return self

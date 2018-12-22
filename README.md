@@ -231,6 +231,26 @@ MATCH (f:File {extension: 'txt'})
 MERGE (f) - [:IS_CLASSIFIED] -> (c);
 ```
 
+If the classification does not already exist, these could also be written on one line:
+
+```cypher
+MATCH (f:File {extension: 'py'}) MERGE (f) - [:IS_CLASSIFIED] -> (:Classification {id: 'code', name: 'code'});
+MATCH (f:File {extension: 'rst'}) MERGE (f) - [:IS_CLASSIFIED] -> (:Classification {id: 'doc', name: 'doc'});
+```
+
+If the classification may already exist, or you are matching multiple groups of objects (including groups of the same label), you must MERGE the classification:
+
+```cypher
+MERGE (c:Classification {id: 'code', name: 'code'}) 
+WITH c 
+MATCH (f:File) 
+WHERE f.extension IN ['c', 'py'] 
+MERGE (f) - [:IS_CLASSIFIED] -> (c);
+
+MERGE (c:Classification {id: 'code', name: 'code'}) WITH c MATCH (f:File) WHERE f.extension IN ['c', 'py', 'sh'] MERGE (f) - [:IS_CLASSIFIED] -> (c);
+MERGE (c:Classification {id: 'doc', name: 'doc'}) WITH c MATCH (f:File) WHERE f.extension IN ['rst', 'md'] MERGE (f) - [:IS_CLASSIFIED] -> (c);
+```
+
 Any qualification (WHERE clause) can be used
 
 ```
@@ -453,6 +473,8 @@ RETURN p.name, count(*) as movie_count
 How do we take snapshots of a given point in time?
 
 ## Indexes
+
+Create an index on an attribute in a collection
 
 ```
 CREATE INDEX ON :Directory(name)
