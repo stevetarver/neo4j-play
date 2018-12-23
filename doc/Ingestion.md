@@ -1,5 +1,11 @@
 # Neo4j Ingestion
 
+References
+
+* https://neo4j.com/docs/cypher-manual/3.5/clauses/load-csv/
+* https://neo4j.com/blog/bulk-data-import-neo4j-3-0/
+* https://neo4j.com/blog/import-10m-stack-overflow-questions/
+
 ## Strategies
 
 Note: the 'I*' keys are 'Ingestion {strategy num}' and used throughout the test code

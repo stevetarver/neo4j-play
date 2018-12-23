@@ -44,8 +44,10 @@ def gen(origin: TreeNode) -> None:
         print(f"CREATE {f.node()}")
     for f in origin.files:
         print(f"CREATE ({me.var}) - [:PARENT_OF] -> ({f.var})")
+
     # Mark the end of a "create group"
-    print()
+    # TODO: this is not needed because of lifetime of variables
+    # print()
     for d in origin.dirs:
         gen(d)
 
@@ -57,7 +59,8 @@ def gen_cypher(root: TreeNode) -> None:
 # Include a small dataset so we can verify the graph
 for p in [Path('./pickles/case_100.pickle'),
           Path('./pickles/case_5000.pickle'),
-          Path('./pickles/case_2mil.pickle')]:
+          # Path('./pickles/case_2mil.pickle'),
+          ]:
     with open(f"{p}", "rb") as infile:
         with open(f"cypher/i2_{p.stem}.cypher", "w") as outfile:
             sys.stdout, tmp = outfile, sys.stdout

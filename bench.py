@@ -21,121 +21,139 @@ TODO: categories
 - sprayers - session pool that suports unordered data, but also indexing cause it is MERGE
 """
 import argparse
+from argparse import RawDescriptionHelpFormatter
 from timeit import default_timer as timer
+from typing import List
 
-from generator import CASE_INFO
+from generator import CASE_INFO, cypher_file
 from trinity import Trinity
 
 
-def ingest_1(filename: str) -> float:
-    """
-    Ingestion strategy 1: One create group
-    One file as a single, large statement
-    This works as long as there is 0 or 1 semicolon at the end
-
-    This approach uses a ref var for items it knows have been created, but larger files will exhaust system
-    memory - we need chunking
-    Alternatively, we could chunk node creates with matching rel creates
-
-    NOTES:
-    - you can set a tx type with session("write"), but it appears to make little difference
-    """
-    with open(filename, "r") as f:
-        stmts = f.read()
+class Bench:
     
-    trinity = Trinity()
-    trinity.clean()
-    start = timer()
-    with trinity.session() as session:
-        session.run(stmts)
-    end = timer()
-    
-    return end - start
+    def __init__(self, strategy: int, iterations: int, batch_size: int, cases: List[str]):
+        self.trinity = Trinity()
+        self.trinity.clean()
+        self.strategy = f"i{strategy}"
+        self.iterations = iterations
+        self.batch_size = batch_size
+        self.cases = [f"case_{x}" for x in cases]
+        
+        # TODO: ingest 1 is the only thing we want gulped at the moment
+        if 1 == strategy:
+            self.ingest_func = self.gulp
+        else:
+            self.ingest_func = self.batch
+        
+    def batch(self, filename: str) -> float:
+        """
+        Given a filename, iterate over it, collecting batch_size elements, execute
+        each batch and return the time the entire process took.
+        """
+        self.trinity.clean()
+        start = timer()
+        with self.trinity.session() as session:
+            with open(filename, "r") as f:
+                stmts = ""
+                for index, line in enumerate(f):
+                    stmts += line
+                    if index % self.batch_size == 0:
+                        session.run(stmts)
+                        stmts = ""
+            # run overflow stmts
+            if stmts.strip():
+                session.run(stmts)
+        return timer() - start
 
+    def gulp(self, filename: str) -> float:
+        """
+        Read a single file into a string and return the time it takes trinity to execute those statements
 
-def ingest_2(filename: str) -> float:
-    """
-    Ingestion strategy 2: Create groups
-    Used when ingesting large datasets, we have all data prior to create
-
-    Accumulate statements till we have about 800, then look for a blank line and submit it.
-    Batch size determined by ingest_1
-    """
-    BATCH_SIZE = 800
-    trinity = Trinity()
-    trinity.clean()
-    start = timer()
-    with trinity.session() as session:
+        This works as long as there is 0, or 1 semicolon at the end
+        """
         with open(filename, "r") as f:
-            stmts = ""
-            count = 0
-            for line in f:
-                stmts += line
-                count += 1
-                if count >= BATCH_SIZE and not line.strip():
-                    session.run(stmts)
-                    stmts = ""
-                    count = 0
-        # run overflow stmts
-        if stmts:
+            stmts = f.read()
+        
+        self.trinity.clean()
+        start = timer()
+        with self.trinity.session() as session:
             session.run(stmts)
-    end = timer()
-    
-    return end - start
+        return timer() - start
 
+    def report_header(self) -> None:
+        print("Case\tNodes\tDuration\tNodes/sec")
 
-def run_ingest_1(iterations: int) -> None:
-    print("Case\tNodes\tDuration\tNodes/sec")
-    ingest_key = "i1"
-    for case, case_info in CASE_INFO.items():
-        # NOTE: current neo4j config causes death above about this many nodes - revisit during tuning
-        if case_info['nodes'] < 1800:
-            fn = f"cypher/{ingest_key}_{case}.cypher"
+    def report(self, case: str, duration: float) -> None:
+        nc = CASE_INFO[case]['nodes']
+        nps = int(nc / duration)
+        print(f"{self.strategy}_{case}\t{nc}\t{duration:.4f}\t{nps}")
+
+    def timeit(self) -> None:
+        self.report_header()
+        # ingest is the only strategy that can be gulped
+        for case in self.cases:
+            fn = cypher_file(case, self.strategy)
             duration = 0
-            for _ in range(iterations):
-                # d = ingest_1(fn)
-                # print(d)
-                # duration += d
-                duration += ingest_1(fn)
-            
-            duration /= iterations
-            nc = case_info['nodes']
-            nps = int(nc / duration)
-            print(f"{ingest_key}_{case}\t{nc}\t{duration:.4f}\t{nps}")
-            return
+            for _ in range(self.iterations):
+                duration += self.ingest_func(fn)
+        
+            self.report(case, duration / self.iterations)
 
 
-def run_ingest_2(iterations: int) -> None:
-    print("Case\tNodes\tDuration\tNodes/sec")
-    ingest_key = "i2"
-    case = "case_5000"
-    fn = f"cypher/{ingest_key}_{case}.cypher"
-    duration = 0
-    for _ in range(iterations):
-        # d = ingest_1(fn)
-        # print(d)
-        # duration += d
-        duration += ingest_2(fn)
-    
-    duration /= iterations
-    nc = CASE_INFO[case]['nodes']
-    nps = int(nc / duration)
-    print(f"{ingest_key}_{case}\t{nc}\t{duration:.4f}\t{nps}")
+def help() -> str:
+    return '''Benchmark ingestion strategies
+
+USE:
+    Benchmark ingestion strategy 2, running 3 iterations per case, with batch size 1000
+    ./bench.py -s2 -i3 -b1000 -c 100
+'''
 
 
 def main():
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument('-i', action='store_true', default=False, help='Ingestion strategy: [1..5]')
-    # parser.add_argument('-c', action='store_true', default=False, help='Count of runs; iterations. Default=1')
-    # parser.add_argument('--index', action='store_true', default=False, help='Indexing on')
-    # args = parser.parse_args()
-    # if args.l:
-    #     dir_counts()
-    # else:
-    #     pickle_datasets()
+    # TODO: use this to verify case info: match (n) return head(labels(n)) as label, count(*);
     
-    run_ingest_1(1)
-    # run_ingest_2(1)
+    parser = argparse.ArgumentParser(description=help(), formatter_class=RawDescriptionHelpFormatter)
+    parser.add_argument('-s', '--strategy',
+                        type=int,
+                        default=1,
+                        help='Ingestion strategy: [1..7]')
+    parser.add_argument('-i', '--iterations',
+                        type=int,
+                        default=1,
+                        help='How many times to run each case - results are averaged')
+    parser.add_argument('-b', '--batch_size',
+                        type=int,
+                        default=1000,
+                        help='How many statements to include in each run()')
+    parser.add_argument('-c', '--cases',
+                        nargs='+',
+                        default=[100],
+                        help='Which use cases, e.g. 100 1750')
+    args = parser.parse_args()
+    
+    print(args)
+    if args.strategy not in (1,2,4,6):
+        print(f"Strategy not available: {args.strategy}")
+        exit(1)
+    if args.batch_size < 100 or args.batch_size > 10_000:
+        print(f"Batch size inappropriate: {args.batch_size}")
+        exit(1)
+    for case in args.cases:
+        if f"case_{case}" not in CASE_INFO:
+            print(f"Case not found: {case}.")
+            print(f"Valid cases are {', '.join(CASE_INFO)}")
+            exit(1)
+        try:
+            cypher_file(f"case_{case}", f"i{args.strategy}")
+        except Exception as e:
+            print(f"Case {case} not available: {e}")
+            exit(1)
+    if args.iterations < 1:
+        print(f"Invalid iterations: {args.iterations}")
+        exit(1)
+
+    b = Bench(args.strategy, args.iterations, args.batch_size, args.cases)
+    b.timeit()
 
 
 if __name__ == "__main__":

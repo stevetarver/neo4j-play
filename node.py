@@ -13,9 +13,9 @@ class Node(NamedTuple):
     (n123:Directory {id: 123})      node_ref - match with this (sometimes merge)
     (n123:Directory {id: 123, ...}) node - create node syntax
     """
-    name: str
+    id: int  # id first simplifies generating csv files
     tag: str  # TODO: in neo4j, I think this is better named a label - clean up, perhaps 'kind' is a better name
-    id: int
+    name: str
     parent_id: Optional[int] # None for root node
     stem: str
     extension: str
@@ -141,10 +141,10 @@ class TreeNode(NamedTuple):
         Recursing a TreeNode structure can be tedious - capture that logic here
         """
         yield self.me
-        for d in self.dirs:
-            yield from d.iter()
         for f in self.files:
             yield f
+        for d in self.dirs:
+            yield from d.iter()
     
     def print(self, indent=0) -> None:
         print(f"{' ' * indent}{self.me}")

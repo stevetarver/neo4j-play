@@ -12,9 +12,13 @@ fi
     # Run from project root
     cd ${THIS_SCRIPT_DIR}/..
 
-    NEO4J_DATA_DIR="neo4j/docker/data"
     PROJECT_DIR=$(pwd)
+
+    NEO4J_DATA_DIR="neo4j/docker/data"
     DATA_DIR="${PROJECT_DIR}/${NEO4J_DATA_DIR}"
+
+    IMPORT_DIR="${PROJECT_DIR}/neo4j/import"
+
     CTNR_NAME="neo"
 
     # A start is a restart; stop the container, blow away data, fresh plate
@@ -41,6 +45,7 @@ fi
         -p 7687:7687                \
         -v ${PROJECT_DIR}:/project  \
         -v ${DATA_DIR}:/data        \
+        -v ${IMPORT_DIR}:/var/lib/neo4j/import  \
         --name ${CTNR_NAME}         \
         neo4j:latest
 )

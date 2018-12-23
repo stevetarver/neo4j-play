@@ -460,7 +460,6 @@ RETURN p.name, count(*) as movie_count
 ```
 
 
-
 # TODO
 
 * How to keep each customer's data separate?
@@ -514,5 +513,6 @@ CREATE INDEX ON :Directory(name)
 Useful commands
 
 * `:sysinfo` - system metrics
-
+* `schema await` - wait for indexing to be done
+* `match (n) return head(labels(n)) as label, count(*);` returns object count by label
 
