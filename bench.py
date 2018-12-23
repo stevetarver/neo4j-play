@@ -14,11 +14,9 @@ Learnings:
 - WITH rescopes variables groups some collections - probably no use in ingestion because we
   have many clauses it would affect
 
-TODO: categories
-- whole file readers
-- line by line readers
-- newline finders
-- sprayers - session pool that suports unordered data, but also indexing cause it is MERGE
+TODO:
+    - validate results
+    - sprayers - session pool that suports unordered data, but also indexing cause it is MERGE
 """
 import argparse
 from argparse import RawDescriptionHelpFormatter
@@ -98,6 +96,24 @@ class Bench:
                 duration += self.ingest_func(fn)
         
             self.report(case, duration / self.iterations)
+            
+    def validate_run(self, case: str) -> None:
+        labels = {"File": "files", "Directory": "dirs"}
+        
+        # Validate the run
+        with self.trinity.session() as session:
+            result = session.run("match (n) return head(labels(n)) as label, count(*);").values()
+        
+        error = False
+        if len(result) > 2:
+            print(f"Unexpected end state: too many node types: {len(result)}")
+            error = True
+        for item in result:
+            if CASE_INFO[case][labels[item[0]]] != item[1]:
+                print(f"Incorrect number of {item[0]} generated: {item[1]}")
+                error = True
+        if error:
+            print(result)
 
 
 def help() -> str:
@@ -131,7 +147,6 @@ def main():
                         help='Which use cases, e.g. 100 1750')
     args = parser.parse_args()
     
-    print(args)
     if args.strategy not in (1,2,4,6):
         print(f"Strategy not available: {args.strategy}")
         exit(1)
