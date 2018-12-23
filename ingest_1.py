@@ -52,12 +52,19 @@ def gen_cypher(origin: TreeNode) -> None:
     gen_edges(origin)
 
 
-for case, info in CASE_INFO.items():
-    with open(pickle_file(case), "rb") as infile:
-        cypher_fn = cypher_file(case, 'i1', False)
-        with open(cypher_fn, "w") as outfile:
-            sys.stdout, tmp = outfile, sys.stdout
-            gen_cypher(pickle.load(infile))
-            sys.stdout = tmp
-            print(f"generated {cypher_fn}")
+# for case, info in CASE_INFO.items():
+#     with open(pickle_file(case), "rb") as infile:
+#         cypher_fn = cypher_file(case, 'i1', False)
+#         with open(cypher_fn, "w") as outfile:
+#             sys.stdout, tmp = outfile, sys.stdout
+#             gen_cypher(pickle.load(infile))
+#             sys.stdout = tmp
+#             print(f"generated {cypher_fn}")
 
+with open(pickle_file("pii", False), "rb") as infile:
+    cypher_fn = cypher_file("pii", 'i1', False)
+    with open(cypher_fn, "w") as outfile:
+        sys.stdout, tmp = outfile, sys.stdout
+        gen_cypher(pickle.load(infile))
+        sys.stdout = tmp
+        print(f"generated {cypher_fn}")
