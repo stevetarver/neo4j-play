@@ -4,6 +4,7 @@ Generate example graphs displaying use cases
 """
 import argparse
 from argparse import RawDescriptionHelpFormatter
+from pprint import pprint, pformat
 from typing import Dict, Optional, List
 
 from neo4j import BoltStatementResult
@@ -55,25 +56,25 @@ def class_rules():
         for stmt in [code, id, size, regex]:
             session.run(stmt)
             
-        print("===> All nodes classified 'code'")
-        query = """
-            MATCH (n) - [:IS_CLASSIFIED] -> (:Classification {id: 'code'})
-            RETURN n
-        """
+        query = "MATCH (n) - [:IS_CLASSIFIED] -> (:Classification {id: 'code'}) RETURN n"
+        print("===> See graph with: MATCH (n) RETURN n")
+        print("===> Fetching all nodes classified 'code' using query:")
+        print(f"===>     {query}")
         # This is a BoltStatementResult
         result = session.run(query)
         for item in result.value():
-            print(item)
+            print(f"{','.join(item.labels)}\t{item['path']}")
 
 
-def class_pii() -> None:
+def class_pii(show_help: bool=True) -> None:
     """ Define a classification hierarchy for PII and classify files """
     t = Trinity()
     t.clean().create_constraints()
     with t.session() as session:
-        with open("./cypher/i1_pii.cypher") as f:
+        with open(cypher_file('pii', 'i1')) as f:
             session.run(f.read())
 
+    # Show classifications as a dict to make the hierarchy clear (instead of cypher statements)
     hier = {
         'pii': {
             'pii_sensitive': {
@@ -90,91 +91,100 @@ def class_pii() -> None:
             },
         }
     }
-    # CREATE (pii:Classification {name: 'pii'})
-    create = "CREATE ({}:Classification {{name: '{}'}})"
-    # CREATE (pii)  - [:INCLUDES] -> (pii_s) - [:IS_CLASSIFIED] -> (pii)
-    rel = "CREATE ({})  - [:INCLUDES] -> ({}) - [:IS_CLASSIFIED] -> ({})"
-    def gen_classes(values: Dict) -> List[str]:
+    def create_node(name: str) -> str:
+        # CREATE (pii:Classification {name: 'pii'})
+        return f"CREATE ({name}:Classification {{id: '{name}', name: '{name}'}})"
+    def create_rels(parent: str, node: str) -> str:
+        # CREATE (pii)  - [:INCLUDES] -> (pii_s) - [:IS_CLASSIFIED] -> (pii)
+        return f"CREATE ({parent}) - [:INCLUDES] -> ({node}) - [:IS_CLASSIFIED] -> ({parent})"
+    def gen_classes(parent, values: Dict) -> List[str]:
+        """
+        I get a parent variable name and a dict of children:
+        - create classifications for each child
+        - create links to the parent
+        - recurse on all child value dicts
+        :param parent: the key of the dict values - the parent of the keys in values
+        :param values: a dict of parent's children and their children
+        """
         stmts = []
-        for parent,children in values.items():
-            stmts.append(create.format(parent, parent))
-            for grandchild in children:
-                stmts.append(create.format(grandchild, grandchild))
-                stmts.append(rel.format(parent, grandchild, parent))
-            stmts.extend(gen_classes(children))
+        for child in values:
+            stmts.append(create_node(child))
+            stmts.append(create_rels(parent, child))
+            stmts.extend(gen_classes(child, values[child]))
         return stmts
+    
+    classifications = [create_node('pii')]
+    classifications.extend(gen_classes('pii', hier['pii']))
+    # matches must be done before creates
+    stmts = """
+    MATCH (f_addr:File) WHERE f_addr.name =~ '.*address.*'
+    MATCH (f_cc:File) WHERE f_cc.name =~ 'credit.*card.*'
+    MATCH (f_pp:File) WHERE f_pp.name =~ '.*passport.*'
+    MATCH (f_phone:File) WHERE f_phone.name =~ '.*phone.*'
+    MATCH (f_ssn:File) WHERE f_ssn.name =~ '.*ssn.*'
+    """
+    # define classifications
+    stmts += '\n'.join(classifications)
+    # classify the data files
+    stmts += """
+    MERGE (f_addr) - [:IS_CLASSIFIED] -> (address)
+    MERGE (f_cc) - [:IS_CLASSIFIED] -> (credit_card)
+    MERGE (f_pp) - [:IS_CLASSIFIED] -> (passport)
+    MERGE (f_phone) - [:IS_CLASSIFIED] -> (phone)
+    MERGE (f_ssn) - [:IS_CLASSIFIED] -> (ssn)
+    """
     with t.session() as session:
-        session.run("\n".join(gen_classes(hier)))
+        session.run(stmts)
 
-    # classes = ['pii', 'pii_sensitive', 'pifi', 'ssn', 'passport', 'credit_card', 'bank_account', 'pii_non_sensitive', 'phone', 'address']
-    # with t.session() as session:
-    #     for c in classes:
-    #         session.run(f"CREATE (pii_s:Classification {{name: '{c}'}})")
-
-    # classes = """
-    # // matches must be done before creates
-    # MATCH (f_addr:File) WHERE f_addr.name =~ '.*address.*'
-    # MATCH (f_cc:File) WHERE f_cc.name =~ 'credit.*card.*'
-    # MATCH (f_pp:File) WHERE f_pp.name =~ '.*passport.*'
-    # MATCH (f_phone:File) WHERE f_phone.name =~ '.*phone.*'
-    # MATCH (f_ssn:File) WHERE f_ssn.name =~ '.*ssn.*'
-    #
-    # CREATE (pii:Classification {name: 'pii'})
-    #
-    # // could result in harm to the individual whose privacy has been breached
-    # CREATE (pii_s:Classification {name: 'pii_sensitive'})
-    # CREATE (pii)  - [:INCLUDES] -> (pii_s) - [:IS_CLASSIFIED] -> (pii)
-    #
-    # CREATE (pifi:Classification {name: 'pifi'})
-    # CREATE (pii_s)  - [:INCLUDES] -> (pifi) - [:IS_CLASSIFIED] -> (pii_s)
-    #
-    # CREATE (ssn:Classification {name: 'ssn'})
-    # CREATE (pii_s)  - [:INCLUDES] -> (ssn) - [:IS_CLASSIFIED] -> (pii_s)
-    #
-    # CREATE (passport:Classification {name: 'passport'})
-    # CREATE (pii_s)  - [:INCLUDES] -> (passport) - [:IS_CLASSIFIED] -> (pii_s)
-    #
-    # CREATE (cc:Classification {name: 'credit_card'})
-    # CREATE (pifi)  - [:INCLUDES] -> (cc) - [:IS_CLASSIFIED] -> (pifi)
-    #
-    # CREATE (ba:Classification {name: 'bank_account'})
-    # CREATE (pifi)  - [:INCLUDES] -> (ba) - [:IS_CLASSIFIED] -> (pifi)
-    #
-    # // public records, phone books, corporate directories and websites
-    # CREATE (pii_ns:Classification {name: 'pii_non_sensitive'})
-    # CREATE (pii) - [:INCLUDES] -> (pii_ns) - [:IS_CLASSIFIED] -> (pii)
-    #
-    # CREATE (phone:Classification {name: 'phone'})
-    # CREATE (pii_ns)  - [:INCLUDES] -> (phone) - [:IS_CLASSIFIED] -> (pii_ns)
-    #
-    # CREATE (address:Classification {name: 'address'})
-    # CREATE (pii_ns)  - [:INCLUDES] -> (address) - [:IS_CLASSIFIED] -> (pii_ns)
-    #
-    # // classify the data files
-    # CREATE (f_addr) - [:IS_CLASSIFIED] -> (address)
-    # CREATE (f_cc) - [:IS_CLASSIFIED] -> (cc)
-    # CREATE (f_pp) - [:IS_CLASSIFIED] -> (passport)
-    # CREATE (f_phone) - [:IS_CLASSIFIED] -> (phone)
-    # CREATE (f_ssn) - [:IS_CLASSIFIED] -> (ssn)
-    # """
-    # with t.session() as session:
-    #     session.run(classes)
-
-    print("""
+    help = """
     Queries:
     - Classification hierarchy:
-        MATCH (c:Classification {name: 'pii'}) - [:INCLUDES*] -> (cc:Classification) RETURN *
-    - All PII classifications and classified files:
-        MATCH (n) - [:IS_CLASSIFIED*] -> (c:Classification {name: 'pii'})  RETURN n
-    - PII sub-classifications and classified files
-        MATCH (n:File) - [:IS_CLASSIFIED] -> (c:Classification) - [:IS_CLASSIFIED*] -> (:Classification {name: 'pii'})  RETURN n,c
+        MATCH (c:Classification {id: 'pii'}) - [:INCLUDES*] -> (cc:Classification) RETURN *
+    - All PII classifications and their classified files:
+        MATCH (n) - [:IS_CLASSIFIED*] -> (c:Classification {id: 'pii'})  RETURN *
+    - PII sub-classifications and their classified files
+        MATCH (n:File) - [:IS_CLASSIFIED] -> (c:Classification) - [:IS_CLASSIFIED*] -> (:Classification {id: 'pii'})  RETURN n,c
     - Just the classified files:
         MATCH (n:File) - [:IS_CLASSIFIED*] -> (:Classification {name: 'pii'})  RETURN n
     - Classified files and their classifications as attributes
-        MATCH (n:File) - [:IS_CLASSIFIED] -> (c:Classification) - [:IS_CLASSIFIED*] -> (:Classification {name: 'pii'})  RETURN c.name, n.path
+        MATCH (n:File) - [:IS_CLASSIFIED] -> (c:Classification) - [:IS_CLASSIFIED*] -> (:Classification {id: 'pii'})  RETURN c.name, n.path
+    """
+    if show_help:
+        print("    Created this classification hierarchy:")
+        print("   ", pformat(hier).replace("\n", "\n    "))
+        print(help)
+
+
+def perspective_pii():
+    """ Add a perspective to the class_pii example """
+    class_pii()
+    perspectives = """
+    CREATE (owner:Perspective {id: 'tom', name: 'tom', descr: 'owner'})
+    CREATE (group:Perspective {id: 'sales', name: 'sales', descr: 'group'})
+    CREATE (other:Perspective {id: 'internet', name: 'internet', descr: 'other'})
+    """
+    edge = """
+    MATCH (p:Perspective)
+    WHERE p.descr = '{perm}'
+    MATCH (n)
+    WHERE (n:File OR n:Directory)
+        AND n.{perm}_perm >= {bits}
+    MERGE (p) - [:{label}]  -> (n)
+    """
+    t = Trinity()
+    with t.session() as session:
+        session.run(perspectives)
+        for perm in ['other', 'group', 'owner']:
+            session.run(edge.format(perm=perm, label='CAN_READ', bits=4))
+            session.run(edge.format(perm=perm, label='CAN_WRITE', bits=6))
+
+    print("""
+    Then, created an internet, sales, and tom perspective and drew edges to the things they could read and write.
+    You can see the whole graph with:
+        MATCH (n) RETURN n
     """)
 
-
+    
 # TODO: classify some data, create a perspecitve tied to what they can read, report on security questions
 
 
@@ -183,6 +193,7 @@ def help() -> str:
     
 1  Basic node classification. Includes matching by node id, extension, size, regular expression.
 2  A classification hierarchy for PII. Includes classified files and example queries.
+3  Using ex 2's structure, add Perspectives and graph their access
 """
 
 
@@ -196,6 +207,8 @@ def main():
         class_rules()
     elif 2 == args.example:
         class_pii()
+    elif 3 == args.example:
+        perspective_pii()
 
 
 if __name__ == "__main__":

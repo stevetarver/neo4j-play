@@ -30,8 +30,7 @@ from trinity import Trinity
 class Bench:
     
     def __init__(self, strategy: int, iterations: int, batch_size: int, cases: List[str]):
-        self.trinity = Trinity()
-        self.trinity.clean()
+        self.trinity = Trinity().clean()
         self.strategy = f"i{strategy}"
         self.iterations = iterations
         self.batch_size = batch_size
@@ -42,6 +41,9 @@ class Bench:
             self.ingest_func = self.gulp
         else:
             self.ingest_func = self.batch
+        # ingest 6 requires constraints
+        if 6 == strategy:
+            self.trinity.create_constraints()
         
     def batch(self, filename: str) -> float:
         """
@@ -55,7 +57,7 @@ class Bench:
                 stmts = ""
                 for index, line in enumerate(f):
                     stmts += line
-                    if index % self.batch_size == 0:
+                    if index > 0 and index % self.batch_size == 0:
                         session.run(stmts)
                         stmts = ""
             # run overflow stmts
@@ -122,6 +124,11 @@ def help() -> str:
 USE:
     Benchmark ingestion strategy 2, running 3 iterations per case, with batch size 1000
     ./bench.py -s2 -i3 -b1000 -c 100
+    
+    Ingest 6 is a bit wonky at the moment - we have to manually split the file to avoid
+    having multiple semicolons in the same run(). You can run it with:
+    ./bench.py --strategy 6 --batch-size 30 --case 100
+    ./bench.py --strategy 6 --batch-size 30 --case 5000
 '''
 
 
@@ -150,7 +157,7 @@ def main():
     if args.strategy not in (1,2,4,6):
         print(f"Strategy not available: {args.strategy}")
         exit(1)
-    if args.batch_size < 100 or args.batch_size > 10_000:
+    if args.batch_size < 30 or args.batch_size > 10_000:
         print(f"Batch size inappropriate: {args.batch_size}")
         exit(1)
     for case in args.cases:

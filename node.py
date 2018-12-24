@@ -26,6 +26,9 @@ class Node(NamedTuple):
     created: int
     accessed: int
     modified: int
+    owner_perm: int  # bits for owner inode perms: 1,2,4
+    group_perm: int
+    other_perm: int
     
     def colon_args(self) -> str:
         """ Cypher properties with :, delimiters. As used in node prop lists """
@@ -108,6 +111,9 @@ def new_node(p: Path) -> Node:
         "modified": int(stats.st_mtime),
         "owner": stats.st_uid,
         "group": stats.st_gid,
+        "owner_perm": int(oct(stats.st_mode)[-3]),
+        "group_perm": int(oct(stats.st_mode)[-2]),
+        "other_perm": int(oct(stats.st_mode)[-1]),
     }
     return Node(**data)
 

@@ -19,6 +19,7 @@ TODO: consume a TreeNode and provide processing for the following categories
 - sprayers - session pool that suports unordered data, but also indexing cause it is MERGE
 """
 from neo4j import GraphDatabase, basic_auth
+from neobolt.exceptions import CypherError
 
 
 class Trinity:
@@ -31,7 +32,7 @@ class Trinity:
     We could also have a long lived driver class that used sessions in a short-lived fashion
     """
     _constraints = "CONSTRAINT ON ({var}:{label}) ASSERT {var}.id IS UNIQUE;"
-    _labels = ("Directory", "File", "Classification")
+    _labels = ("Directory", "File", "Classification", "Perspective")
 
     def __init__(self, url: str="bolt://localhost", user: str="neo4j", password: str="Admin1234!"):
         self._driver = GraphDatabase.driver(url, auth=basic_auth(user, password))
@@ -49,7 +50,7 @@ class Trinity:
         """
         with self.session() as session:
             session.run("MATCH (n) DETACH DELETE n")
-        self.drop_constraints()
+        self.drop_all_constraints()
         return self
 
     def create_constraints(self) -> "Trinity":
@@ -60,14 +61,28 @@ class Trinity:
         return self
 
     def drop_constraints(self) -> "Trinity":
-        """ Drop constraints on the db """
+        """ Drop the constraints we created from the db """
+        # TODO: This can error in a way that throws an exception even though we are passing
+        #       Each with session block should be wrapped in a try-catch
         with self.session() as session:
             for c in [self._constraints.format(var=x.lower(), label=x) for x in self._labels]:
                 try:
                     session.run("DROP " + c)
-                except:
-                    # If the constraint does not exist, this will throw an exception - we don't care
-                    pass
+                except CypherError as ce:
+                    if "No such constraint" not in f"{ce}":
+                        print(f"Trinity.drop_all_constraints() exception: {ce}")
+        return self
+
+    def drop_all_constraints(self) -> "Trinity":
+        """ Drop all constraints on the db - even those we did not create """
+        with self.session() as session:
+            # For all current constraints
+            for c in session.run("CALL db.constraints").value():
+                try:
+                    session.run("DROP " + c)
+                except CypherError as ce:
+                    # If an exception occurs, the driver may close the connection and try again - throwing another ex
+                    print(f"Trinity.drop_all_constraints() exception: {ce}")
         return self
 
     def session(self):
@@ -84,3 +99,4 @@ class Trinity:
         with self.session() as session:
             session.run(stmts)
         return self
+

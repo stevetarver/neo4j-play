@@ -16,6 +16,7 @@ ROOT = "/Users/starver/code/public/cpython"
 EXCLUDED_DIRS = {'appomni'} # for home dir large dataset
 
 CASE_INFO = {
+    'pii': {'nodes': 6, 'dirs': 1, 'files': 5},
     'case_100': {'nodes': 97, 'dirs': 35, 'files': 62},
     'case_200': {'nodes': 205, 'dirs': 35, 'files': 170},
     'case_300': {'nodes': 313, 'dirs': 56, 'files': 257},
@@ -175,6 +176,9 @@ You can generate a large set from your home directory:
 
 You can list directory contents and descendent count to help exclude dirs to reach a target node count:
   ./generator.py -l -r /Users/me
+
+You can regenerate the pii examples with:
+  ./generator.py -n pii -r ./examples/pii
 """
 
 
@@ -199,6 +203,7 @@ def main():
     if args.default:
         print("===> Generating default datasets")
         pickle_default_datasets(Path("/Users/starver/code/public/cpython"))
+        pickle_dataset(Path("./examples/pii"), "pii")
         exit(0)
     
     p = Path(args.root)
