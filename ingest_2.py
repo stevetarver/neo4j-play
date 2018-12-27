@@ -23,10 +23,10 @@ TODO:
 """
 import pickle
 import sys
-from pathlib import Path
+from timeit import default_timer as timer
 
-from generator import cypher_file
-from node import TreeNode, Node
+from generator import cypher_file, pickle_file
+from node import TreeNode
 
 
 def gen(origin: TreeNode) -> None:
@@ -57,14 +57,18 @@ def gen_cypher(root: TreeNode) -> None:
 
 
 # Include a small dataset so we can verify the graph
-for p in [Path('./pickles/case_100.pickle'),
-          Path('./pickles/case_5000.pickle'),
-          # Path('./pickles/case_2mil.pickle'),
-          ]:
-    with open(f"{p}", "rb") as infile:
-        with open(f"cypher/i2_{p.stem}.cypher", "w") as outfile:
+cases = [
+    "case_100",
+    "case_5000",
+    "case_2mil",
+]
+for c in cases:
+    with open(pickle_file(c), "rb") as infile:
+        with open(cypher_file(c, "i2", False), "w") as outfile:
             sys.stdout, tmp = outfile, sys.stdout
+            start = timer()
             gen_cypher(pickle.load(infile))
+            end = timer()
             sys.stdout = tmp
-            print(f"generated i2_{p.stem}.cypher")
+            print(f"generated i2_{c}.cypher in {end - start:.2f} seconds")
 

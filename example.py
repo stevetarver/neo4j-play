@@ -178,6 +178,7 @@ def perspective_pii():
             session.run(edge.format(perm=perm, label='CAN_READ', bits=4))
             session.run(edge.format(perm=perm, label='CAN_WRITE', bits=6))
 
+    # TODO: standard security queries
     print("""
     Then, created an internet, sales, and tom perspective and drew edges to the things they could read and write.
     You can see the whole graph with:
@@ -185,7 +186,8 @@ def perspective_pii():
     """)
 
     
-# TODO: classify some data, create a perspecitve tied to what they can read, report on security questions
+# TODO: classify some data, create a perspecitve tied to what they can read, add_stat on security questions
+# TODO: don't think we need the IS_CLASSIFIED edges inside the classification - change this
 
 
 def help() -> str:

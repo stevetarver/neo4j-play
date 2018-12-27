@@ -8,6 +8,7 @@ import pickle
 from argparse import RawDescriptionHelpFormatter
 from pathlib import Path
 from typing import Optional
+from timeit import default_timer as timer
 
 from node import Node, TreeNode, new_node
 
@@ -32,6 +33,8 @@ CASE_INFO = {
     'case_3000': {'nodes': 2931, 'dirs': 166, 'files': 2765},
     'case_4000': {'nodes': 3957, 'dirs': 216, 'files': 3741},
     'case_5000': {'nodes': 5015, 'dirs': 289, 'files': 4726},
+    # manually generated
+    'case_2mil': {'nodes': 1914832, 'dirs': 538779, 'files': 1376053},
 }
 
 
@@ -172,13 +175,7 @@ def help():
 The 'default' generation creates target sized sets of dir/file data from the cpython repo.
 
 You can generate a large set from your home directory:
-  ./generate.py -r /Users/me -n my_home
-
-You can list directory contents and descendent count to help exclude dirs to reach a target node count:
-  ./generator.py -l -r /Users/me
-
-You can regenerate the pii examples with:
-  ./generator.py -n pii -r ./examples/pii
+  ./generate.py -n my_home -r ~
 """
 
 
@@ -218,7 +215,9 @@ def main():
         dir_counts(p)
     elif args.root:
         print(f"===> Collecting {p} into a {args.name} pickle")
+        start = timer()
         pickle_dataset(p, args.name)
+        print(f"Operations completed in {timer() - start} seconds")
 
 
 if __name__ == "__main__":

@@ -65,7 +65,7 @@ class Node(NamedTuple):
     def _asdict_quoted(self) -> Dict:
         """ _asdict() but strings, dates are quoted """
         # Note: this strategy destroys the OrderedDictness
-        return {k: v if isinstance(v, int) else f"'{v}'" for k, v in self._asdict().items()}
+        return {k: v if isinstance(v, int) else f'"{v}"' for k, v in self._asdict().items()}
         # this retains it
         # d = self._asdict()
         # for k, v in d.items():

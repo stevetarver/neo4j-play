@@ -84,10 +84,32 @@ _Description:_ same statement structure as above, but use a session pool to have
 The `run()` commands return very quickly, but neo4j processing take longer. We may be able to avoid wait time by transferring data more quickly.
 
 
-### Ingest 6: CSV
+### Ingest 6: Live CSV
 
 _Description:_ we can generate a CSV of perfect data and a small set of statements that generate everything, one line at a time. Because we specify types in col headers and neo4j has all the data already parsed, there could be some hidden advantages.
 
+References:
+
+* https://neo4j.com/docs/cypher-manual/3.5/clauses/load-csv/
+
+
+### Ingest 7: Offline CSV
+
+_Description:_ The absolute fastest way to ingest large datasets is the `neo4j-admin import` ETL tool. The data is completely specified offline and then neo4j is started with the db intact, the dataset indexed, and ready for use.
+
+Total time:
+
+* gen csv: generating the 2mil pickle ~= 180s, i6 csv in 31s
+* gen db:
+* start neo4j: >~ 10s
+* index time:
+
+Note: the container start time alone is time enough to generate (10 * 20,000) = 200,000 nodes
+
+NOTES:
+
+* We can generate these files anywhere, archive them, and start temp databases up to analyize them.
+* TODO: How big does the dataset have to be for this to be a time savings? csv create time, gen time, start time, index time == next fastest load time.
 
 ## General perf tuning
 

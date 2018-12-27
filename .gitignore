@@ -208,3 +208,8 @@ venv.bak/
 
 /.idea
 /neo4j/docker/
+/neo4j/import/i6_case_2mil_file.csv
+/neo4j/import/i6_case_2mil_dir.csv
+/cypher/i2_case_2mil.cypher
+/cypher/i4_case_2mil.cypher
+/cypher/i6_case_2mil.cypher

@@ -1,5 +1,4 @@
-
-// NOTE: Someone should have established constraints
+// NOTE: Someone should have established constraints prior to execution
 USING PERIODIC COMMIT
 LOAD CSV WITH HEADERS FROM "file:///i6_case_5000_dir.csv" as row
 

@@ -24,13 +24,12 @@ TODO:
 """
 import csv
 import pickle
-from pathlib import Path
+from timeit import default_timer as timer
 
-from generator import pickle_file, cypher_file
+from generator import cypher_file, pickle_file
 from node import Node, TreeNode
 
 # noinspection SqlNoDataSourceInspection
-# TODO: Something between 10,000 and 100,000 updates per transaction are a good target.
 # TODO: add constraints to file to improve relationship creation
 # TODO: can I set variables during load to avoid having to index and lookup. Will that work with millions of nodes?
 NODE_FIELDS = []
@@ -41,8 +40,8 @@ for k,v in Node._field_types.items():
         NODE_FIELDS.append(f"    {k}: toInteger(row.{k})")
 NODE_FIELDS = ",\n".join(NODE_FIELDS)
 
-CYPHER = f'''
-// NOTE: Someone should have established constraints
+# TODO: Something between 10,000 and 100,000 updates per transaction are a good target for periodic commit - but needs tuning
+CYPHER = f'''// NOTE: Someone should have established constraints prior to execution
 USING PERIODIC COMMIT
 LOAD CSV WITH HEADERS FROM "file:///i6_~CASE~_dir.csv" as row
 
@@ -54,7 +53,8 @@ CREATE (d:Directory {{
 FOREACH (pid IN (CASE row.parent_id WHEN NULL THEN [] ELSE [1] END) |
   MERGE (p:Directory {{id: toInteger(row.parent_id)}})
   MERGE (p)-[:PARENT_OF]->(d)
-);
+)
+
 
 USING PERIODIC COMMIT
 LOAD CSV WITH HEADERS FROM "file:///i6_~CASE~_file.csv" as row
@@ -64,11 +64,12 @@ CREATE (f:File {{
 }})
 
 MERGE (p:Directory {{id: toInteger(row.parent_id)}})
-MERGE (p) - [:PARENT_OF] -> (f);
+MERGE (p) - [:PARENT_OF] -> (f)
 '''
 
 
 def gen_csv(root: TreeNode, case: str) -> None:
+    # TODO: is there a way to combine files using :LABEL, etc.
     # Must have separate files for each node type (label)
     dir = f"./neo4j/import/i6_{case}_dir.csv"
     file = f"./neo4j/import/i6_{case}_file.csv"
@@ -94,10 +95,14 @@ def gen_cypher(case: str) -> None:
 cases = [
     'case_100',
     'case_5000',
+    'case_2mil',
 ]
 for c in cases:
     with open(pickle_file(c), "rb") as infile:
         root = pickle.load(infile)
+        start = timer()
         gen_csv(root, c)
         gen_cypher(c)
+        end = timer()
+        print(f"generated i6_{c}.cypher in {end - start:.2f} seconds")
 

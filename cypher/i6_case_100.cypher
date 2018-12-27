@@ -1,5 +1,4 @@
-
-// NOTE: Someone should have established constraints
+// NOTE: Someone should have established constraints prior to execution
 USING PERIODIC COMMIT
 LOAD CSV WITH HEADERS FROM "file:///i6_case_100_dir.csv" as row
 
@@ -26,7 +25,7 @@ CREATE (d:Directory {
 FOREACH (pid IN (CASE row.parent_id WHEN NULL THEN [] ELSE [1] END) |
   MERGE (p:Directory {id: toInteger(row.parent_id)})
   MERGE (p)-[:PARENT_OF]->(d)
-);
+)
 
 
 USING PERIODIC COMMIT
@@ -52,4 +51,4 @@ CREATE (f:File {
 })
 
 MERGE (p:Directory {id: toInteger(row.parent_id)})
-MERGE (p) - [:PARENT_OF] -> (f);
+MERGE (p) - [:PARENT_OF] -> (f)

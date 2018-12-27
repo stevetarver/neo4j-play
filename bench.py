@@ -35,6 +35,7 @@ class Bench:
         self.iterations = iterations
         self.batch_size = batch_size
         self.cases = [f"case_{x}" for x in cases]
+        self.stats = ["Case\tNodes\tDuration\tNodes/sec"]
         
         # TODO: ingest 1 is the only thing we want gulped at the moment
         if 1 == strategy:
@@ -42,7 +43,7 @@ class Bench:
         else:
             self.ingest_func = self.batch
         # ingest 6 requires constraints
-        if 6 == strategy:
+        if strategy in (4,6):
             self.trinity.create_constraints()
         
     def batch(self, filename: str) -> float:
@@ -80,24 +81,30 @@ class Bench:
             session.run(stmts)
         return timer() - start
 
-    def report_header(self) -> None:
-        print("Case\tNodes\tDuration\tNodes/sec")
-
-    def report(self, case: str, duration: float) -> None:
+    def add_stat(self, case: str, duration: float) -> None:
         nc = CASE_INFO[case]['nodes']
         nps = int(nc / duration)
-        print(f"{self.strategy}_{case}\t{nc}\t{duration:.4f}\t{nps}")
+        self.stats.append(f"{self.strategy}_{case}\t{nc}\t{duration:.4f}\t{nps}")
 
+    def report(self):
+        print("\n".join(self.stats))
+        
     def timeit(self) -> None:
-        self.report_header()
         # ingest is the only strategy that can be gulped
         for case in self.cases:
+            print(f"Intermediate times for {self.strategy} {case}:")
             fn = cypher_file(case, self.strategy)
             duration = 0
             for _ in range(self.iterations):
-                duration += self.ingest_func(fn)
+                # TODO: sometimes the initial run is MUCH slower - why?, how to avoid that?, should we?
+                temp = self.ingest_func(fn)
+                print(f"  {temp:.3f}")
+                duration += temp
         
-            self.report(case, duration / self.iterations)
+            self.add_stat(case, duration / self.iterations)
+            # TODO: error in ./bench.py -s2 -i3 -c 5000 2mil
+            #       Unexpected end state: too many node types: 3 - probably a null
+            # self.validate_run(case)
             
     def validate_run(self, case: str) -> None:
         labels = {"File": "files", "Directory": "dirs"}
@@ -116,19 +123,32 @@ class Bench:
                 error = True
         if error:
             print(result)
+        # TODO: check no disconnected nodes
 
 
 def help() -> str:
     return '''Benchmark ingestion strategies
 
+Output is tab delimited for easy import into a spreadsheet
+
 USE:
     Benchmark ingestion strategy 2, running 3 iterations per case, with batch size 1000
-    ./bench.py -s2 -i3 -b1000 -c 100
+      ./bench.py -s2 -i3 -b1000 -c 100
     
     Ingest 6 is a bit wonky at the moment - we have to manually split the file to avoid
     having multiple semicolons in the same run(). You can run it with:
-    ./bench.py --strategy 6 --batch-size 30 --case 100
-    ./bench.py --strategy 6 --batch-size 30 --case 5000
+      ./bench.py --strategy 6 --batch-size 30 --case 100
+      ./bench.py --strategy 6 --batch-size 30 --case 5000
+
+    Benchmarking strategies:
+      ./bench.py -s1 -i3 -c 1250
+      ./bench.py -s2 -i3 -c 5000
+      ./bench.py -s4 -i3 -c 5000
+      ./bench.py -s6 -i3 -c 5000 -b29
+      
+NOTES:
+- you cannot run 2mil test case with default tuning
+  check dbms.memory.heap.max_size, etc.
 '''
 
 
@@ -157,7 +177,7 @@ def main():
     if args.strategy not in (1,2,4,6):
         print(f"Strategy not available: {args.strategy}")
         exit(1)
-    if args.batch_size < 30 or args.batch_size > 10_000:
+    if args.batch_size < 25 or args.batch_size > 10_000:
         print(f"Batch size inappropriate: {args.batch_size}")
         exit(1)
     for case in args.cases:
@@ -176,6 +196,7 @@ def main():
 
     b = Bench(args.strategy, args.iterations, args.batch_size, args.cases)
     b.timeit()
+    b.report()
 
 
 if __name__ == "__main__":

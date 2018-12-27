@@ -1,5 +1,27 @@
 # Neo4j
 
+## Adding a new test case
+
+Suppose you want to add a large test case - your home directory:
+
+* Generate the pickle: `./generator.py -n case_home -r ~`
+* Copy the output to the `generator.CASE_INFO`
+* Select the ingest strategy and add the case to the bottom of the file. Ingest 2,4,6,7 are suited to large datasets
+* Run the `./ingest_N.py` for the strategy
+* Run the benchmark a couple of times: `./bench.py -s case_home -i2
+
+Running the benchmarks:
+
+1. Start neo4j: `./scripts/run_neo4j.sh`
+1. Browse to [http://localhost:7474/browser/](http://localhost:7474/browser/)
+1. Log in with: neo4j / neo4j
+1. Change password to `Admin1234!`
+1. Review instructions: `./bench.py -h`
+
+Notes:
+
+* Any time you change `node.Node`, you must regenerate the pickles and re-run ingestion
+
 ## Graph db choices
 
 * Neo4j - oldest, most mature?
@@ -74,7 +96,7 @@ Relationships are wrapped with square brackets
 
 The basic relationship forms are:
 
-```cypher
+```
 () - [] - ()  # relationship exists
 () - [] ->()  # directed relationship right
 ()<- [] - ()  # directed relationship left
@@ -100,7 +122,7 @@ Before adding data, we need to setup constraints to prevent creating duplicate n
 * CREATEs will throw errors if the node, edge already exists, so we must write more resilient CREATE statements.
 * No unique constraints on relationships - always use MERGE to create a relationship
 
-```cypher
+```
 // Each node instance is unique, as identified by its id
 // Creates an index on id
 CREATE CONSTRAINT ON (d:Directory)      ASSERT d.id IS UNIQUE;
@@ -119,13 +141,13 @@ DROP CONSTRAINT ON (c:Classification) ASSERT c.id IS UNIQUE;
 
 Create a node
 
-```cypher
+```
 CREATE (:File {id: 9447561, name: 'Project_Default.xml', stem: 'Project_Default', extension: '.xml'})
 ```
 
 Create a relationship. Note: always use `MERGE` in this case to avoid creating duplicate relationships.
 
-```cypher
+```
 MATCH (d:Directory), (f:File)
 WHERE d.id = 9437821 AND f.id = 9446967
 MERGE (d) - [:PARENT_OF] -> (f)
@@ -133,7 +155,7 @@ MERGE (d) - [:PARENT_OF] -> (f)
 
 Create directed graph entry - combining the two above into a single statment
 
-```cypher
+```
 CREATE (:Directory {name:'etc'})  - [:PARENT_OF] -> (:Directory {name:'conf.d'})
 CREATE (:Directory {name:'etc'}) <- [:CHILD_OF]  -  (:Directory {name:'conf.d'})
 
@@ -153,7 +175,7 @@ MERGE provides conditional blocks for both CREATE and MATCH, allowing different 
 
 Multiple create statements for the same node. Use case: we may get full data from an api call multiple times - using MERGE ON CREATE SET allows us to create the node without violating constraints and generating an error. Two forms are shown.
 
-```cypher
+```
 // This merge matches nodes given all elements. If the node was previously created and some data
 // has changed, it generates a constraint violation.
 MERGE (:File {id: 94475611, name: 'foo.xml', stem: 'foo', extension: '.xml'})
@@ -166,7 +188,7 @@ ON CREATE SET
 
 Create a node with partial data, then later add remaining data. Use case: we get partial data returned from an api call, and a later call provides more data. Or, we don't know if the existing node has all data.
 
-```cypher
+```
 // Pass 1: we are only give the item id - we form the property list with the information provided
 MERGE (f:File {id: 94475612})
 RETURN f
@@ -187,7 +209,7 @@ Create a relationship with possibly sparse data:
 * The nodes may not exist
 * The relationship between the nodes is given
 
-```cypher
+```
 MERGE (d:Directory {id: 444})
 MERGE (f:File {id: 555})
 MERGE (f) - [:CHILD_OF] -> (d) - [:PARENT_OF] -> (f)
@@ -209,7 +231,7 @@ Two approaches:
 
 Example of single classification node - just fyi - won't use
 
-```cypher
+```
 CREATE (c:Classification {id: 'classifications', name: 'classifications'})
 WITH c
 MATCH (code:File {extension: 'py'}), (text:File {extension: 'txt'})
@@ -219,7 +241,7 @@ MERGE (text) - [:IS_TEXT] -> (c);
 
 Attach a new classification `code` to every python file
 
-```cypher
+```
 CREATE (c:Classification {id: 'code', name: 'code'})
 WITH c
 MATCH (f:File {extension: 'py'})
@@ -253,7 +275,7 @@ MERGE (c:Classification {id: 'doc', name: 'doc'}) WITH c MATCH (f:File) WHERE f.
 
 Any qualification (WHERE clause) can be used
 
-```cypher
+```
 CREATE (c:Classification {id: 'big', name: 'big'})
 WITH c
 MATCH (f:File)
@@ -263,7 +285,7 @@ MERGE (f) - [:IS_CLASSIFIED] -> (c);
 
 Even regex - all items that have `neo` in the name
 
-```cypher
+```
 CREATE (c:Classification {id: 'neo', name: 'neo'})
 WITH c
 MATCH (n)
@@ -282,7 +304,7 @@ MERGE (n) - [:IS_CLASSIFIED] -> (c);
 
 Delete a single classification and all relationships
 
-```cypher
+```
 MATCH (c:Classification {id: 'neo'})
 DETACH DELETE c
 ```
@@ -295,7 +317,7 @@ DETACH DELETE c
 
 Count items monitored, classifications
 
-```cypher
+```
 MATCH (n)
 WHERE n:Directory OR n:File
 RETURN COUNT(*) as monitored_count
@@ -307,7 +329,7 @@ RETURN COUNT(*) as classification_count
 
 Items that are / are not classified
 
-```cypher
+```
 // Any type of classification
 MATCH (n) - [:IS_CLASSIFIED] -> (:Classification)
 WHERE n:File OR n:Directory
@@ -330,7 +352,7 @@ RETURN n,c
 
 Find items with Classification `code`
 
-```cypher
+```
 MATCH (n) - [:IS_CLASSIFIED] -> (c:Classification {id: 'code'})
 RETURN n,c
 ```
